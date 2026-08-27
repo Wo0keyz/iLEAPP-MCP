@@ -138,5 +138,10 @@ This project includes ready-to-use **System Prompts** to configure your LLMs (Cl
 
 ---
 
+## 🏗️ Architecture & Developer Documentation
+If you want to understand the internal design, security implementations, or extend the server with new forensic modules, read the **[Developer Architecture Guide (ARCHITECTURE.md)](ARCHITECTURE.md)**.
+
+---
+
 ## 📄 License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
