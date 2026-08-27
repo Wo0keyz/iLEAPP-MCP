@@ -138,7 +138,9 @@ class CaseManager:
             total_count = 0
             count_query = None
             clean_query = query.strip().rstrip(";")
-            if clean_query.upper().startswith("SELECT ") and " LIMIT " not in clean_query.upper():
+            has_limit = re.search(r"\bLIMIT\b", clean_query, re.IGNORECASE) is not None
+
+            if clean_query.upper().startswith("SELECT ") and not has_limit:
                 count_query = f"SELECT COUNT(*) FROM ({clean_query})"
                 try:
                     count_cursor = conn.cursor()
@@ -150,7 +152,11 @@ class CaseManager:
                     total_count = 0
 
             # Execute with pagination
-            paginated_query = f"{clean_query} LIMIT {limit} OFFSET {offset}"
+            if has_limit:
+                paginated_query = clean_query
+            else:
+                paginated_query = f"{clean_query} LIMIT {limit} OFFSET {offset}"
+
             cursor.execute(paginated_query, params)
             rows_raw = cursor.fetchall()
             columns = [d[0] for d in cursor.description] if cursor.description else []
