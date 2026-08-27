@@ -123,5 +123,20 @@ Or interactively ask the AI assistant:
 
 ---
 
+## 🕵️ Forensic Agents & System Prompts
+
+This project includes ready-to-use **System Prompts** to configure your LLMs (Claude, GPT-4, etc.) as highly specialized forensic agents. You can find them in the `agents/` directory:
+
+* 📄 **[analyste_forensic.md](agents/analyste_forensic.md)**: A generalist digital forensic analyst. It cross-references timelines, messages, and locations, always citing sources strictly to maintain forensic integrity without hallucinations.
+* 📄 **[profileur_comportemental.md](agents/profileur_comportemental.md)**: A behavioral profiler. It focuses on reconstructing a user's daily habits, routine locations, frequent contacts, sleep cycles, and general lifestyle using pattern recognition.
+
+**How to use them:**
+1. Connect the `iLEAPP-MCP` server to your AI client.
+2. Copy the content of the desired prompt file.
+3. Paste it as the "System Prompt" or as the very first message in a new chat.
+4. Give the agent the path to your extraction and let it run autonomously!
+
+---
+
 ## 📄 License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
