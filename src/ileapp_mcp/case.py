@@ -72,7 +72,9 @@ class CaseManager:
         for p in self._report_root.rglob("*"):
             file_count += 1
             if file_count > max_files_to_scan:
-                logger.warning(f"Reached maximum file scan limit ({max_files_to_scan}) in {self._report_root}. Stopping indexing.")
+                logger.warning(
+                    f"Reached maximum file scan limit ({max_files_to_scan}) in {self._report_root}. Stopping indexing."
+                )
                 break
 
             if not p.is_file():
