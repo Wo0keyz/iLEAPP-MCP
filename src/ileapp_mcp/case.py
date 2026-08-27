@@ -67,7 +67,16 @@ class CaseManager:
         if not self._report_root or not self._report_root.exists():
             return
 
+        file_count = 0
+        max_files_to_scan = 50000  # Prevent DoS on massive root directories
         for p in self._report_root.rglob("*"):
+            file_count += 1
+            if file_count > max_files_to_scan:
+                logger.warning(
+                    f"Reached maximum file scan limit ({max_files_to_scan}) in {self._report_root}. Stopping indexing."
+                )
+                break
+
             if not p.is_file():
                 continue
 
