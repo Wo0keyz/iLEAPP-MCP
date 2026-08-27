@@ -111,8 +111,10 @@ def get_raw_artifact_data(
         db_part, table_part = artifact_name.split(":", 1)
         db_path = case.get_sqlite_path(db_part)
         if db_path:
+            # Sanitize table_part to prevent SQL injection via backticks
+            safe_table = table_part.replace("`", "").replace("'", "")
             cols, fetched_rows, total = case.query_sqlite(
-                db_path, f"SELECT * FROM `{table_part}`", limit=limit, offset=offset
+                db_path, f"SELECT * FROM `{safe_table}`", limit=limit, offset=offset
             )
             # Filter if requested
             filtered_rows = fetched_rows
@@ -165,8 +167,9 @@ def get_raw_artifact_data(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (artifact_name,)
             )
             if cursor.fetchone():
+                safe_artifact = artifact_name.replace("`", "").replace("'", "")
                 cols, fetched_rows, total = case.query_sqlite(
-                    db_path, f"SELECT * FROM `{artifact_name}`", limit=limit, offset=offset
+                    db_path, f"SELECT * FROM `{safe_artifact}`", limit=limit, offset=offset
                 )
                 has_more = (offset + limit) < total
                 return PaginatedResult[dict[str, Any]](
