@@ -48,3 +48,14 @@ def test_run_readonly_sql_rejection(loaded_case: CaseManager) -> None:
             query="DELETE FROM messages WHERE id = 1",
             db_name="sms",
         )
+
+
+def test_run_readonly_sql_with_limit(loaded_case: CaseManager) -> None:
+    result = run_readonly_sql(
+        loaded_case,
+        query="SELECT id, message_text FROM messages LIMIT 1",
+        db_name="sms",
+    )
+    assert result.row_count == 1
+    assert "message_text" in result.columns
+    assert not result.truncated
