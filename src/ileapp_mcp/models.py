@@ -201,3 +201,82 @@ class CaseInfo(BaseModel):
     device_summary: dict[str, str] = Field(
         default_factory=dict, description="Summary of device information"
     )
+
+
+class HealthRecord(BaseModel):
+    """Forensic record for health and biometric data (Steps, Heart Rate, Workouts, Sleep)."""
+
+    timestamp: str | None = Field(default=None, description="Event timestamp in ISO format")
+    metric_type: str = Field(description="Type of metric (Steps, HeartRate, Sleep, Workout, etc.)")
+    value: str | float | None = Field(default=None, description="Recorded value")
+    unit: str | None = Field(default=None, description="Measurement unit (count, bpm, km, etc.)")
+    source_device: str | None = Field(
+        default=None, description="Hardware source (Apple Watch, iPhone)"
+    )
+    raw_data: dict[str, Any] = Field(
+        default_factory=dict, description="Raw fields from the iLEAPP report"
+    )
+
+
+class NoteRecord(BaseModel):
+    """Forensic record for Apple Notes, Voice Memos, Reminders, and Calendar events."""
+
+    timestamp: str | None = Field(default=None, description="Creation or modification timestamp")
+    note_type: str = Field(description="Type (Apple Notes, Voice Memo, Reminder, Calendar)")
+    title: str | None = Field(default=None, description="Title or subject")
+    content: str | None = Field(default=None, description="Text content or summary")
+    file_path: str | None = Field(
+        default=None, description="Relative path to extracted file (e.g. .m4a audio)"
+    )
+    raw_data: dict[str, Any] = Field(
+        default_factory=dict, description="Raw fields from the iLEAPP report"
+    )
+
+
+class PhotoRecord(BaseModel):
+    """Forensic record for photos, videos, and media metadata (EXIF)."""
+
+    timestamp: str | None = Field(default=None, description="Creation timestamp in ISO format")
+    file_name: str | None = Field(default=None, description="Original file name")
+    media_type: str = Field(default="Image", description="Image, Video, Burst, etc.")
+    latitude: float | None = Field(default=None, description="GPS Latitude if EXIF is present")
+    longitude: float | None = Field(default=None, description="GPS Longitude if EXIF is present")
+    camera_model: str | None = Field(default=None, description="Camera make/model")
+    is_deleted: bool = Field(default=False, description="True if found in Recently Deleted / Trash")
+    album_name: str | None = Field(default=None, description="Associated album or sharing state")
+    file_path: str | None = Field(
+        default=None, description="Relative path to the media file in the report"
+    )
+    raw_data: dict[str, Any] = Field(
+        default_factory=dict, description="Raw fields from the iLEAPP report"
+    )
+
+
+class NetworkRecord(BaseModel):
+    """Forensic record for wireless connections (Wi-Fi, Bluetooth, Cell Towers)."""
+
+    timestamp: str | None = Field(default=None, description="Connection or scan timestamp")
+    connection_type: str = Field(description="Wi-Fi, Bluetooth, Cell Tower, AirDrop")
+    ssid_or_name: str | None = Field(
+        default=None, description="Wi-Fi SSID or Bluetooth Device Name"
+    )
+    bssid_or_mac: str | None = Field(default=None, description="BSSID or MAC Address")
+    duration_seconds: int | None = Field(
+        default=None, description="Duration of connection if applicable"
+    )
+    raw_data: dict[str, Any] = Field(
+        default_factory=dict, description="Raw fields from the iLEAPP report"
+    )
+
+
+class SystemStateRecord(BaseModel):
+    """Forensic record for system power state, lock cycles, and KnowledgeC/Biome events."""
+
+    timestamp: str | None = Field(default=None, description="Event timestamp in ISO format")
+    event_type: str = Field(description="Event type (Lock, Unlock, Battery, Reboot, AppForeground)")
+    value: str | None = Field(
+        default=None, description="State value (e.g. '100%', 'Locked', 'com.apple.camera')"
+    )
+    raw_data: dict[str, Any] = Field(
+        default_factory=dict, description="Raw fields from the iLEAPP report"
+    )

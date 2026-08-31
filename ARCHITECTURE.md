@@ -35,8 +35,13 @@ iLEAPP-MCP/
 │       ├── calls.py               # Historique d'appels & durées
 │       ├── device_info.py         # Métadonnées matériel, OS et acquisition
 │       ├── generic.py             # Découverte d'artefacts & exécution SQL brute sécurisée
+│       ├── health.py              # Santé, podomètre, sommeil, rythme cardiaque
 │       ├── locations.py           # Positions GPS & calcul de rayon Haversine
 │       ├── messages.py            # Messageries unifiées (SMS, iMessage, WhatsApp, Signal...)
+│       ├── networks.py            # Wi-Fi, Bluetooth, Cell Towers et AirDrop
+│       ├── notes.py               # Notes, mémos vocaux et calendrier
+│       ├── photos.py              # Métadonnées photos, EXIF (GPS) et Corbeille
+│       ├── system_state.py        # Événements système (Batterie, Verrouillage, Biome/KnowledgeC)
 │       ├── timeline.py            # Timeline chronologique agrégée
 │       └── web.py                 # Navigation Safari/Chrome, requêtes de recherche
 ├── tests/                         # Suite de tests Pytest (Couverture ~74%)

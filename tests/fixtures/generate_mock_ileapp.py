@@ -308,4 +308,61 @@ def generate_mock_ileapp_case(target_dir: Path) -> Path:
             ["Courses", "2026-08-18 08:00:00", "2026-08-18 08:30:00", "Café, Thé, Pommes"]
         )
 
+    # 7. Health & Biometrics (Health - Steps.tsv)
+    health_path = reports_dir / "Health - Steps.tsv"
+    with open(health_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(["Start Time", "End Time", "Value", "Unit", "Source"])
+        writer.writerow(
+            ["2025-10-14 08:30:00", "2025-10-14 08:45:00", "1250", "count", "Apple Watch Series 9"]
+        )
+        writer.writerow(["2025-10-14 12:00:00", "2025-10-14 12:10:00", "450", "count", "iPhone"])
+
+    # 8. Notes (Apple_Notes.db)
+    notes_db_path = reports_dir / "Apple_Notes.db"
+    conn_notes = sqlite3.connect(notes_db_path)
+    cur_notes = conn_notes.cursor()
+    cur_notes.execute("CREATE TABLE notes (creation_date TEXT, title TEXT, content TEXT)")
+    cur_notes.execute(
+        "INSERT INTO notes VALUES ('2025-10-10 14:00:00', 'Grocery List', 'Milk, Eggs, Bread')"
+    )
+    cur_notes.execute(
+        "INSERT INTO notes VALUES ('2025-10-12 10:15:00', 'Meeting Notes', 'Discuss Q4 roadmap')"
+    )
+    conn_notes.commit()
+    conn_notes.close()
+
+    # 9. Photos (Photos.sqlite)
+    photos_db_path = reports_dir / "Photos.sqlite"
+    conn_photos = sqlite3.connect(photos_db_path)
+    cur_photos = conn_photos.cursor()
+    cur_photos.execute(
+        "CREATE TABLE ZASSET (ZDATECREATED TEXT, ZFILENAME TEXT, ZLATITUDE REAL, ZLONGITUDE REAL, ZTRASHED INTEGER, ZDIRECTORY TEXT)"
+    )
+    cur_photos.execute(
+        "INSERT INTO ZASSET VALUES ('2025-10-13 18:45:00', 'IMG_0001.HEIC', 48.8584, 2.2945, 0, 'DCIM/100APPLE')"
+    )
+    cur_photos.execute(
+        "INSERT INTO ZASSET VALUES ('2025-10-14 09:20:00', 'IMG_0002.HEIC', NULL, NULL, 1, 'Trash')"
+    )
+    conn_photos.commit()
+    conn_photos.close()
+
+    # 10. Networks (Wi-Fi Known Networks.tsv)
+    wifi_path = reports_dir / "Wi-Fi Known Networks.tsv"
+    with open(wifi_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(["Last Joined", "SSID", "BSSID"])
+        writer.writerow(["2025-10-14 19:30:00", "Home_WiFi", "00:11:22:33:44:55"])
+        writer.writerow(["2025-10-14 10:00:00", "Starbucks", "66:77:88:99:AA:BB"])
+
+    # 11. System State (KnowledgeC - Battery.tsv)
+    power_path = reports_dir / "KnowledgeC - Battery Level.tsv"
+    with open(power_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(["Timestamp", "Battery Level", "Is Charging"])
+        writer.writerow(["2025-10-14 08:00:00", "100", "1"])
+        writer.writerow(["2025-10-14 12:00:00", "75", "0"])
+        writer.writerow(["2025-10-14 18:00:00", "20", "0"])
+
     return target_dir
