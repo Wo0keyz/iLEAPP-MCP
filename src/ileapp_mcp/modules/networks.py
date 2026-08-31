@@ -39,7 +39,7 @@ def get_network_connections(
 
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
-    results = []
+    results: list[NetworkRecord] = []
 
     all_files = list(case.get_all_tsv_files()) + list(case.get_all_sqlite_dbs())
     for file_path in all_files:
@@ -54,27 +54,14 @@ def get_network_connections(
 
             try:
                 if file_path.suffix.lower() in [".tsv", ".csv"]:
-                    rows = case.read_tsv_records(file_path)
-
-                    class DummyPage:
-                        def __init__(self, r):
-                            self.rows = r[offset : offset + limit]
-                            self.total_count = len(r)
-
-                    page = DummyPage(rows)
+                    rows_to_process = case.read_tsv_records(file_path)
                 else:
                     cols, r, total_c = case.query_sqlite(
                         file_path, f"SELECT * FROM `{stem}`", limit=10000, offset=0
                     )
+                    rows_to_process = r
 
-                    class DummyPage2:
-                        def __init__(self, ro, tc):
-                            self.rows = ro
-                            self.total_count = tc
-
-                    page = DummyPage2(r, total_c)
-
-                for row in page.rows:
+                for row in rows_to_process:
                     ts = _find_field(
                         ["timestamp", "date", "time", "lastconnected", "joined", "lastjoined"], row
                     )
@@ -119,12 +106,12 @@ def get_network_connections(
                 logger.warning(f"Error querying network artifact {stem}: {e}")
 
     total_count = len(results)
-    page = results[offset : offset + limit]
+    paginated_items = results[offset : offset + limit]
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None
 
     return PaginatedResult[NetworkRecord](
-        items=page,
+        items=paginated_items,
         total_count=total_count,
         has_more=has_more,
         limit=limit,

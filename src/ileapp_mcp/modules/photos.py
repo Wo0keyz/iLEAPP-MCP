@@ -40,7 +40,7 @@ def get_photos_metadata(
 
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
-    results = []
+    results: list[PhotoRecord] = []
 
     all_files = list(case.get_all_tsv_files()) + list(case.get_all_sqlite_dbs())
     for file_path in all_files:
@@ -49,14 +49,7 @@ def get_photos_metadata(
         if any(x in name_low for x in ["photo", "media", "exif", "album", "zasset"]):
             try:
                 if file_path.suffix.lower() in [".tsv", ".csv"]:
-                    rows = case.read_tsv_records(file_path)
-
-                    class DummyPage:
-                        def __init__(self, r):
-                            self.rows = r[offset : offset + limit]
-                            self.total_count = len(r)
-
-                    page = DummyPage(rows)
+                    rows_to_process = case.read_tsv_records(file_path)
                 else:
                     try:
                         conn = case.get_sqlite_connection(file_path)
@@ -68,22 +61,16 @@ def get_photos_metadata(
                     except Exception:
                         tables = [stem]
 
-                    page = None
+                    rows_to_process = []
                     for tbl in tables:
-                        if page is None or len(page.rows) == 0:
+                        if not rows_to_process:
                             cols, r, total_c = case.query_sqlite(
                                 file_path, f"SELECT * FROM `{tbl}`", limit=10000, offset=0
                             )
+                            rows_to_process = r
 
-                            class DummyPage2:
-                                def __init__(self, ro, tc):
-                                    self.rows = ro
-                                    self.total_count = tc
-
-                            page = DummyPage2(r, total_c)
-
-                if page:
-                    for row in page.rows:
+                if rows_to_process:
+                    for row in rows_to_process:
                         ts = _find_field(["timestamp", "date", "creation", "added"], row)
                         if ts:
                             ts = str(ts)
@@ -134,12 +121,12 @@ def get_photos_metadata(
                 logger.warning(f"Error querying photos artifact {stem}: {e}")
 
     total_count = len(results)
-    page = results[offset : offset + limit]
+    paginated_items = results[offset : offset + limit]
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None
 
     return PaginatedResult[PhotoRecord](
-        items=page,
+        items=paginated_items,
         total_count=total_count,
         has_more=has_more,
         limit=limit,
