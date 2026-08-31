@@ -165,11 +165,7 @@ def get_messages(
                     elif "sms" in stem:
                         db_app = "SMS/iMessage"
 
-                    cursor.execute(f"SELECT * FROM `{table}`")
-                    cols = [d[0] for d in cursor.description] if cursor.description else []
-                    rows = cursor.fetchall()
-                    for r in rows:
-                        row_dict = dict(zip(cols, r, strict=False))
+                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
                         all_records.append(_normalize_message_record(row_dict, default_app=db_app))
             except Exception as e:
                 logger.debug("Error querying SQLite messages from %s: %s", db_path, e)

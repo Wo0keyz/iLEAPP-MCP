@@ -40,6 +40,7 @@ def get_notes_and_memos(
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
     results: list[NoteRecord] = []
+    global_total_count = 0
 
     all_files = list(case.get_all_tsv_files()) + list(case.get_all_sqlite_dbs())
     for file_path in all_files:
@@ -51,7 +52,7 @@ def get_notes_and_memos(
 
             try:
                 if file_path.suffix.lower() in [".tsv", ".csv"]:
-                    rows_to_process = case.read_tsv_records(file_path)
+                    rows_iterator = case.iter_tsv_rows(file_path)
                 else:
                     try:
                         conn = case.get_sqlite_connection(file_path)
@@ -63,16 +64,14 @@ def get_notes_and_memos(
                     except Exception:
                         tables = [stem]
 
-                    rows_to_process = []
-                    for tbl in tables:
-                        if not rows_to_process:
-                            cols, r, total_c = case.query_sqlite(
-                                file_path, f"SELECT * FROM `{tbl}`", limit=10000, offset=0
-                            )
-                            rows_to_process = r
+                    def yield_from_tables():
+                        for tbl in tables:
+                            yield from case.iter_sqlite_rows(file_path, f"SELECT * FROM `{tbl}`")
+                    
+                    rows_iterator = yield_from_tables()
 
-                if rows_to_process:
-                    for row in rows_to_process:
+                if rows_iterator:
+                    for row in rows_iterator:
                         ts = _find_field(["timestamp", "date", "creation", "lastmodified"], row)
                         if ts:
                             ts = str(ts)
@@ -100,7 +99,8 @@ def get_notes_and_memos(
                         elif "calendar" in name_low or "event" in name_low:
                             ntype = "Calendar"
 
-                        results.append(
+                        if offset <= global_total_count < offset + limit:
+                            results.append(
                             NoteRecord(
                                 timestamp=str(ts) if ts else None,
                                 note_type=ntype,
@@ -110,12 +110,13 @@ def get_notes_and_memos(
                                 raw_data=row,
                             )
                         )
+                        global_total_count += 1
 
             except Exception as e:
                 logger.warning(f"Error querying notes artifact {stem}: {e}")
 
-    total_count = len(results)
-    paginated_items = results[offset : offset + limit]
+    total_count = global_total_count
+    paginated_items = results
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None
 

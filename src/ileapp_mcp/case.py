@@ -176,6 +176,19 @@ class CaseManager:
 
             return columns, rows, total_count
 
+    def iter_sqlite_rows(
+        self, db_path: Path, query: str, params: tuple[Any, ...] | dict[str, Any] = ()
+    ):
+        """Yield rows one by one to prevent loading massive tables into memory."""
+        self.validate_readonly_query(query)
+        conn = self.get_sqlite_connection(db_path)
+        with self._lock:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            columns = [d[0] for d in cursor.description] if cursor.description else []
+            for row in cursor:
+                yield dict(zip(columns, row, strict=False))
+
     def read_tsv_records(
         self,
         tsv_path: Path,
@@ -218,6 +231,26 @@ class CaseManager:
         """Return distinct TSV/CSV file paths discovered."""
         with self._lock:
             return sorted(set(self._tsv_files.values()))
+
+    def iter_tsv_rows(self, tsv_path: Path, delimiter: str | None = None):
+        """Yield TSV rows one by one."""
+        if not tsv_path.exists():
+            return
+
+        if delimiter is None:
+            delimiter = "\t" if tsv_path.suffix.lower() == ".tsv" else ","
+
+        encodings = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
+        for enc in encodings:
+            try:
+                with open(tsv_path, encoding=enc) as f:
+                    reader = csv.DictReader(f, delimiter=delimiter)
+                    for row in reader:
+                        if row is not None:
+                            yield dict(row)
+                return
+            except UnicodeDecodeError:
+                continue
 
     @staticmethod
     def validate_readonly_query(query: str) -> None:

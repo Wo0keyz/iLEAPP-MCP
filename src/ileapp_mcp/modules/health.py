@@ -39,6 +39,7 @@ def get_health_data(
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
     results: list[HealthRecord] = []
+    global_total_count = 0
 
     all_files = list(case.get_all_tsv_files()) + list(case.get_all_sqlite_dbs())
     for file_path in all_files:
@@ -50,14 +51,13 @@ def get_health_data(
 
             try:
                 if file_path.suffix.lower() in [".tsv", ".csv"]:
-                    rows_to_process = case.read_tsv_records(file_path)
+                    rows_iterator = case.iter_tsv_rows(file_path)
                 else:
-                    cols, r, total_c = case.query_sqlite(
-                        file_path, f"SELECT * FROM `{stem}`", limit=10000, offset=0
+                    rows_iterator = case.iter_sqlite_rows(
+                        file_path, f"SELECT * FROM `{stem}`"
                     )
-                    rows_to_process = r
 
-                for row in rows_to_process:
+                for row in rows_iterator:
                     ts = _find_field(["timestamp", "date", "time", "start", "creation"], row)
                     if ts:
                         ts = str(ts)
@@ -81,7 +81,8 @@ def get_health_data(
                     unit = _find_field(["unit", "measurement"], row)
                     source = _find_field(["source", "device", "hardware", "bundle"], row)
 
-                    results.append(
+                    if offset <= global_total_count < offset + limit:
+                            results.append(
                         HealthRecord(
                             timestamp=str(ts) if ts else None,
                             metric_type=str(mtype),
@@ -91,12 +92,13 @@ def get_health_data(
                             raw_data=row,
                         )
                     )
+                    global_total_count += 1
 
             except Exception as e:
                 logger.warning(f"Error querying health artifact {stem}: {e}")
 
-    total_count = len(results)
-    paginated_items = results[offset : offset + limit]
+    total_count = global_total_count
+    paginated_items = results
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None
 

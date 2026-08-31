@@ -122,11 +122,7 @@ def get_call_history(
                 tables = [r[0] for r in cursor.fetchall()]
                 for table in tables:
                     default_app = "FaceTime" if "facetime" in stem else "Cellular"
-                    cursor.execute(f"SELECT * FROM `{table}`")
-                    cols = [d[0] for d in cursor.description] if cursor.description else []
-                    rows = cursor.fetchall()
-                    for r in rows:
-                        row_dict = dict(zip(cols, r, strict=False))
+                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
                         all_records.append(
                             _normalize_call_record(row_dict, default_app=default_app)
                         )

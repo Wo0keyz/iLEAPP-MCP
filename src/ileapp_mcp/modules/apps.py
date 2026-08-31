@@ -127,11 +127,7 @@ def get_installed_apps(
                 )
                 tables = [r[0] for r in cursor.fetchall()]
                 for table in tables:
-                    cursor.execute(f"SELECT * FROM `{table}`")
-                    cols = [d[0] for d in cursor.description] if cursor.description else []
-                    rows = cursor.fetchall()
-                    for r in rows:
-                        row_dict = dict(zip(cols, r, strict=False))
+                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
                         all_records.append(_normalize_app_record(row_dict))
             except Exception as e:
                 logger.debug("Error reading apps from SQLite %s: %s", db_path, e)
