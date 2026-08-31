@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Generator
 
 import pytest
 
@@ -15,7 +16,7 @@ def mock_case_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def loaded_case(mock_case_dir: Path) -> CaseManager:
+def loaded_case(mock_case_dir: Path) -> Generator[CaseManager, None, None]:
     """Fixture providing an initialized and loaded CaseManager."""
     case = CaseManager()
     case.load_case(mock_case_dir)

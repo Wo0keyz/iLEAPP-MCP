@@ -69,7 +69,8 @@ Le **cœur d'accès aux données**. Il gère :
 * **Découverte & Indexation** : Détecte les sous-dossiers `_iLEAPP_Reports_*` et indexe l'ensemble des fichiers `.sqlite`, `.db`, `.tsv` et `.csv` dans un dictionnaire mémoire (`stem -> Path`).
 * **Protection DoS** : Limite l'exploration à 50 000 fichiers pour éviter le blocage lors d'un scan de dossier racine.
 * **Pool de Connexions SQLite Thread-Safe** : Caches de connexions par base, configurées avec `check_same_thread=False` et `row_factory = sqlite3.Row`.
-* **Exécuteur de Requêtes & Estimateur de Pagination** : Intercepte les requêtes pour calculer le `COUNT(*)` sans double-pagination et injecte `LIMIT/OFFSET` de façon transparente.
+* **Générateurs à Empreinte Mémoire Nulle (Lazy-Yielding)** : Fournit `iter_sqlite_rows` et `iter_tsv_rows` qui streamment les lignes au lieu de charger les 100 000 entrées d'une table avec `fetchall()`. Cela garantit que le serveur ne subira jamais d'Out-Of-Memory (OOM) sur de très grosses extractions.
+* **Estimateur de Pagination SQL** : `query_sqlite` intercepte les requêtes pour calculer le `COUNT(*)` sans double-pagination et injecte `LIMIT/OFFSET` de façon transparente.
 * **Parsing Multi-Encodage** : Lecture résiliente des TSV/CSV en essayant successivement `utf-8-sig`, `utf-8`, `latin-1` et `cp1252`.
 
 ### 3.2. Normalisation Dynamique : `_find_field`
