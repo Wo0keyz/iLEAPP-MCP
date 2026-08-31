@@ -1,5 +1,7 @@
 import logging
 import re
+from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 from ileapp_mcp.case import CaseManager
@@ -62,7 +64,9 @@ def get_photos_metadata(
                     except Exception:
                         tables = [stem]
 
-                    def yield_from_tables(fp, tbls):
+                    def yield_from_tables(
+                        fp: Path, tbls: list[str]
+                    ) -> Generator[dict[str, Any], None, None]:
                         for tbl in tbls:
                             yield from case.iter_sqlite_rows(fp, f"SELECT * FROM `{tbl}`")
 
