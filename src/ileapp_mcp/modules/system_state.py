@@ -66,9 +66,7 @@ def get_system_state(
                 if file_path.suffix.lower() in [".tsv", ".csv"]:
                     rows_iterator = case.iter_tsv_rows(file_path)
                 else:
-                    rows_iterator = case.iter_sqlite_rows(
-                        file_path, f"SELECT * FROM `{stem}`"
-                    )
+                    rows_iterator = case.iter_sqlite_rows(file_path, f"SELECT * FROM `{stem}`")
 
                 for row in rows_iterator:
                     ts = _find_field(["timestamp", "date", "time", "creation"], row)
@@ -99,14 +97,14 @@ def get_system_state(
                     )
 
                     if offset <= global_total_count < offset + limit:
-                            results.append(
-                        SystemStateRecord(
-                            timestamp=str(ts) if ts else None,
-                            event_type=etype,
-                            value=str(val) if val else None,
-                            raw_data=row,
+                        results.append(
+                            SystemStateRecord(
+                                timestamp=str(ts) if ts else None,
+                                event_type=etype,
+                                value=str(val) if val else None,
+                                raw_data=row,
+                            )
                         )
-                    )
                     global_total_count += 1
 
             except Exception as e:

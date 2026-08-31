@@ -53,9 +53,7 @@ def get_health_data(
                 if file_path.suffix.lower() in [".tsv", ".csv"]:
                     rows_iterator = case.iter_tsv_rows(file_path)
                 else:
-                    rows_iterator = case.iter_sqlite_rows(
-                        file_path, f"SELECT * FROM `{stem}`"
-                    )
+                    rows_iterator = case.iter_sqlite_rows(file_path, f"SELECT * FROM `{stem}`")
 
                 for row in rows_iterator:
                     ts = _find_field(["timestamp", "date", "time", "start", "creation"], row)
@@ -82,16 +80,16 @@ def get_health_data(
                     source = _find_field(["source", "device", "hardware", "bundle"], row)
 
                     if offset <= global_total_count < offset + limit:
-                            results.append(
-                        HealthRecord(
-                            timestamp=str(ts) if ts else None,
-                            metric_type=str(mtype),
-                            value=str(val) if val else None,
-                            unit=str(unit) if unit else None,
-                            source_device=str(source) if source else None,
-                            raw_data=row,
+                        results.append(
+                            HealthRecord(
+                                timestamp=str(ts) if ts else None,
+                                metric_type=str(mtype),
+                                value=str(val) if val else None,
+                                unit=str(unit) if unit else None,
+                                source_device=str(source) if source else None,
+                                raw_data=row,
+                            )
                         )
-                    )
                     global_total_count += 1
 
             except Exception as e:

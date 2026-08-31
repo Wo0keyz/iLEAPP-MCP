@@ -62,11 +62,11 @@ def get_photos_metadata(
                     except Exception:
                         tables = [stem]
 
-                    def yield_from_tables():
-                        for tbl in tables:
-                            yield from case.iter_sqlite_rows(file_path, f"SELECT * FROM `{tbl}`")
-                    
-                    rows_iterator = yield_from_tables()
+                    def yield_from_tables(fp, tbls):
+                        for tbl in tbls:
+                            yield from case.iter_sqlite_rows(fp, f"SELECT * FROM `{tbl}`")
+
+                    rows_iterator = yield_from_tables(file_path, tables)
 
                 if rows_iterator:
                     for row in rows_iterator:
@@ -103,19 +103,19 @@ def get_photos_metadata(
 
                         if offset <= global_total_count < offset + limit:
                             results.append(
-                            PhotoRecord(
-                                timestamp=str(ts) if ts else None,
-                                file_name=str(fname) if fname else None,
-                                media_type=str(mtype),
-                                latitude=float(lat) if lat else None,
-                                longitude=float(lon) if lon else None,
-                                camera_model=str(cam) if cam else None,
-                                is_deleted=is_del,
-                                album_name=str(album) if album else None,
-                                file_path=str(fpath) if fpath else None,
-                                raw_data=row,
+                                PhotoRecord(
+                                    timestamp=str(ts) if ts else None,
+                                    file_name=str(fname) if fname else None,
+                                    media_type=str(mtype),
+                                    latitude=float(lat) if lat else None,
+                                    longitude=float(lon) if lon else None,
+                                    camera_model=str(cam) if cam else None,
+                                    is_deleted=is_del,
+                                    album_name=str(album) if album else None,
+                                    file_path=str(fpath) if fpath else None,
+                                    raw_data=row,
+                                )
                             )
-                        )
                         global_total_count += 1
 
             except Exception as e:
