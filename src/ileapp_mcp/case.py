@@ -4,6 +4,7 @@ import logging
 import re
 import sqlite3
 import threading
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -178,7 +179,7 @@ class CaseManager:
 
     def iter_sqlite_rows(
         self, db_path: Path, query: str, params: tuple[Any, ...] | dict[str, Any] = ()
-    ):
+    ) -> Generator[dict[str, Any], None, None]:
         """Yield rows one by one to prevent loading massive tables into memory."""
         self.validate_readonly_query(query)
         conn = self.get_sqlite_connection(db_path)
@@ -232,7 +233,9 @@ class CaseManager:
         with self._lock:
             return sorted(set(self._tsv_files.values()))
 
-    def iter_tsv_rows(self, tsv_path: Path, delimiter: str | None = None):
+    def iter_tsv_rows(
+        self, tsv_path: Path, delimiter: str | None = None
+    ) -> Generator[dict[str, str], None, None]:
         """Yield TSV rows one by one."""
         if not tsv_path.exists():
             return
