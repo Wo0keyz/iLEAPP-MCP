@@ -33,18 +33,23 @@
 
 ### Prerequisites
 * Python 3.10 or higher
-* [uv](https://github.com/astral-sh/uv) (recommended) or `pip`
+* [uv](https://github.com/astral-sh/uv) (recommended for significantly faster resolution and installation) or `pip`
 
 ```bash
 # Clone the repository
 git clone https://github.com/Wo0keyz/iLEAPP-MCP.git
 cd iLEAPP-MCP
 
-# Install package in editable mode
-pip install -e .
+# Create a virtual environment (optional but recommended)
+uv venv
+# On Windows: .venv\Scripts\activate
+# On Linux/macOS: source .venv/bin/activate
+
+# Install package in editable mode using uv
+uv pip install -e .
 
 # Or install with dev & test dependencies
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
 
 ---
