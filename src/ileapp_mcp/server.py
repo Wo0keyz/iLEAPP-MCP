@@ -17,10 +17,15 @@ from ileapp_mcp.models import (
     CallRecord,
     CaseInfo,
     DeviceInfo,
+    HealthRecord,
     LocationRecord,
     MessageRecord,
+    NetworkRecord,
+    NoteRecord,
     PaginatedResult,
+    PhotoRecord,
     SqlQueryResult,
+    SystemStateRecord,
     TimelineEvent,
     WebRecord,
 )
@@ -350,4 +355,107 @@ def run_readonly_sql(
         query=query,
         db_name=db_name,
         max_rows=max_rows,
+    )
+
+
+@mcp.tool()
+def get_health_data(
+    metric_type: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> PaginatedResult[HealthRecord]:
+    """Retrieve health and biometric data (Steps, Heart Rate, Workouts, Sleep, etc.)."""
+    return _get_health_data(
+        case=case_manager,
+        metric_type=metric_type,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@mcp.tool()
+def get_notes_and_memos(
+    keyword: str | None = None,
+    note_type: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> PaginatedResult[NoteRecord]:
+    """Retrieve Apple Notes, Voice Memos, Reminders, and Calendar events."""
+    return _get_notes_and_memos(
+        case=case_manager,
+        keyword=keyword,
+        note_type=note_type,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@mcp.tool()
+def get_photos_metadata(
+    has_gps: bool = False,
+    is_deleted: bool = False,
+    media_type: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> PaginatedResult[PhotoRecord]:
+    """Retrieve photos, videos, and media metadata (EXIF)."""
+    return _get_photos_metadata(
+        case=case_manager,
+        has_gps=has_gps,
+        is_deleted=is_deleted,
+        media_type=media_type,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@mcp.tool()
+def get_network_connections(
+    connection_type: str | None = None,
+    ssid_or_name: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> PaginatedResult[NetworkRecord]:
+    """Retrieve wireless connections (Wi-Fi, Bluetooth, Cell Towers, AirDrop)."""
+    return _get_network_connections(
+        case=case_manager,
+        connection_type=connection_type,
+        ssid_or_name=ssid_or_name,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@mcp.tool()
+def get_system_state(
+    event_type: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> PaginatedResult[SystemStateRecord]:
+    """Retrieve system power state, lock cycles, and KnowledgeC/Biome events."""
+    return _get_system_state(
+        case=case_manager,
+        event_type=event_type,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
     )

@@ -4,8 +4,13 @@ from ileapp_mcp.case import CaseManager
 from ileapp_mcp.models import PaginatedResult, TimelineEvent
 from ileapp_mcp.modules.apps import get_installed_apps
 from ileapp_mcp.modules.calls import get_call_history
+from ileapp_mcp.modules.health import get_health_data
 from ileapp_mcp.modules.locations import get_location_history
 from ileapp_mcp.modules.messages import get_messages
+from ileapp_mcp.modules.networks import get_network_connections
+from ileapp_mcp.modules.notes import get_notes_and_memos
+from ileapp_mcp.modules.photos import get_photos_metadata
+from ileapp_mcp.modules.system_state import get_system_state
 from ileapp_mcp.modules.web import get_web_activity
 
 logger = logging.getLogger(__name__)
@@ -175,6 +180,100 @@ def get_timeline(
                             "version": app.version,
                             "permissions": app.permissions,
                         },
+                    )
+                )
+
+    # 6. Health & Biometrics
+    if include_all or "health" in cats:
+        health_res = get_health_data(case, limit=1000, offset=0)
+        for h in health_res.items:
+            if h.timestamp:
+                summary = f"Health: {h.metric_type} = {h.value} {h.unit or ''}"
+                events.append(
+                    TimelineEvent(
+                        timestamp=h.timestamp,
+                        category="health",
+                        source_artifact="HealthData",
+                        summary=summary.strip(),
+                        details={"metric_type": h.metric_type, "value": h.value, "unit": h.unit},
+                    )
+                )
+
+    # 7. Notes & Memos
+    if include_all or "notes" in cats or "memos" in cats:
+        notes_res = get_notes_and_memos(case, limit=1000, offset=0)
+        for n in notes_res.items:
+            if n.timestamp:
+                summary = f"{n.note_type}: {n.title or n.content or 'No Title'}"
+                events.append(
+                    TimelineEvent(
+                        timestamp=n.timestamp,
+                        category="notes",
+                        source_artifact=n.note_type.replace(" ", ""),
+                        summary=summary[:150].strip(),
+                        details={"title": n.title, "content": n.content, "file_path": n.file_path},
+                    )
+                )
+
+    # 8. Photos & Media
+    if include_all or "photos" in cats or "media" in cats:
+        photos_res = get_photos_metadata(case, limit=1000, offset=0)
+        for p in photos_res.items:
+            if p.timestamp:
+                del_str = " (Deleted)" if p.is_deleted else ""
+                summary = f"{p.media_type}{del_str}: {p.file_name or 'Unknown'} [Album: {p.album_name or 'None'}]"
+                events.append(
+                    TimelineEvent(
+                        timestamp=p.timestamp,
+                        category="photos",
+                        source_artifact="PhotosDB",
+                        summary=summary.strip(),
+                        details={
+                            "file_name": p.file_name,
+                            "latitude": p.latitude,
+                            "longitude": p.longitude,
+                            "camera": p.camera_model,
+                            "deleted": p.is_deleted,
+                            "file_path": p.file_path,
+                        },
+                    )
+                )
+
+    # 9. Network Connections
+    if include_all or "networks" in cats or "wireless" in cats:
+        net_res = get_network_connections(case, limit=1000, offset=0)
+        for net in net_res.items:
+            if net.timestamp:
+                summary = (
+                    f"{net.connection_type} Connection: {net.ssid_or_name or net.bssid_or_mac}"
+                )
+                events.append(
+                    TimelineEvent(
+                        timestamp=net.timestamp,
+                        category="networks",
+                        source_artifact=net.connection_type.replace(" ", ""),
+                        summary=summary.strip(),
+                        details={
+                            "ssid_or_name": net.ssid_or_name,
+                            "bssid_or_mac": net.bssid_or_mac,
+                            "duration": net.duration_seconds,
+                        },
+                    )
+                )
+
+    # 10. System State
+    if include_all or "system" in cats:
+        sys_res = get_system_state(case, limit=1000, offset=0)
+        for s in sys_res.items:
+            if s.timestamp:
+                summary = f"System Event: {s.event_type} - {s.value}"
+                events.append(
+                    TimelineEvent(
+                        timestamp=s.timestamp,
+                        category="system",
+                        source_artifact="SystemState",
+                        summary=summary.strip(),
+                        details={"event_type": s.event_type, "value": s.value},
                     )
                 )
 
