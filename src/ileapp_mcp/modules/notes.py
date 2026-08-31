@@ -64,11 +64,11 @@ def get_notes_and_memos(
                     except Exception:
                         tables = [stem]
 
-                    def yield_from_tables():
-                        for tbl in tables:
-                            yield from case.iter_sqlite_rows(file_path, f"SELECT * FROM `{tbl}`")
-                    
-                    rows_iterator = yield_from_tables()
+                    def yield_from_tables(fp, tbls):
+                        for tbl in tbls:
+                            yield from case.iter_sqlite_rows(fp, f"SELECT * FROM `{tbl}`")
+
+                    rows_iterator = yield_from_tables(file_path, tables)
 
                 if rows_iterator:
                     for row in rows_iterator:
@@ -101,15 +101,15 @@ def get_notes_and_memos(
 
                         if offset <= global_total_count < offset + limit:
                             results.append(
-                            NoteRecord(
-                                timestamp=str(ts) if ts else None,
-                                note_type=ntype,
-                                title=str(title) if title else None,
-                                content=str(content) if content else None,
-                                file_path=str(fpath) if fpath else None,
-                                raw_data=row,
+                                NoteRecord(
+                                    timestamp=str(ts) if ts else None,
+                                    note_type=ntype,
+                                    title=str(title) if title else None,
+                                    content=str(content) if content else None,
+                                    file_path=str(fpath) if fpath else None,
+                                    raw_data=row,
+                                )
                             )
-                        )
                         global_total_count += 1
 
             except Exception as e:

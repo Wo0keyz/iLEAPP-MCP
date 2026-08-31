@@ -57,9 +57,7 @@ def get_network_connections(
                 if file_path.suffix.lower() in [".tsv", ".csv"]:
                     rows_iterator = case.iter_tsv_rows(file_path)
                 else:
-                    rows_iterator = case.iter_sqlite_rows(
-                        file_path, f"SELECT * FROM `{stem}`"
-                    )
+                    rows_iterator = case.iter_sqlite_rows(file_path, f"SELECT * FROM `{stem}`")
 
                 for row in rows_iterator:
                     ts = _find_field(
@@ -92,16 +90,16 @@ def get_network_connections(
                         ctype = "AirDrop"
 
                     if offset <= global_total_count < offset + limit:
-                            results.append(
-                        NetworkRecord(
-                            timestamp=str(ts) if ts else None,
-                            connection_type=ctype,
-                            ssid_or_name=str(name) if name else None,
-                            bssid_or_mac=str(mac) if mac else None,
-                            duration_seconds=int(dur) if dur and str(dur).isdigit() else None,
-                            raw_data=row,
+                        results.append(
+                            NetworkRecord(
+                                timestamp=str(ts) if ts else None,
+                                connection_type=ctype,
+                                ssid_or_name=str(name) if name else None,
+                                bssid_or_mac=str(mac) if mac else None,
+                                duration_seconds=int(dur) if dur and str(dur).isdigit() else None,
+                                raw_data=row,
+                            )
                         )
-                    )
                     global_total_count += 1
 
             except Exception as e:
