@@ -41,8 +41,13 @@ from ileapp_mcp.modules.generic import (
 from ileapp_mcp.modules.generic import (
     run_readonly_sql as _run_readonly_sql,
 )
+from ileapp_mcp.modules.health import get_health_data as _get_health_data
 from ileapp_mcp.modules.locations import get_location_history as _get_location_history
 from ileapp_mcp.modules.messages import get_messages as _get_messages
+from ileapp_mcp.modules.networks import get_network_connections as _get_network_connections
+from ileapp_mcp.modules.notes import get_notes_and_memos as _get_notes_and_memos
+from ileapp_mcp.modules.photos import get_photos_metadata as _get_photos_metadata
+from ileapp_mcp.modules.system_state import get_system_state as _get_system_state
 from ileapp_mcp.modules.timeline import get_timeline as _get_timeline
 from ileapp_mcp.modules.web import get_web_activity as _get_web_activity
 

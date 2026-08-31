@@ -39,7 +39,6 @@ def get_system_state(
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
     results = []
-    total = 0
 
     all_files = list(case.get_all_tsv_files()) + list(case.get_all_sqlite_dbs())
     for file_path in all_files:
