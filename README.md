@@ -15,7 +15,12 @@
 * 📞 **Call Logs**: Analyze incoming, outgoing, and missed calls with contact names and duration analysis (Cellular, FaceTime, VoIP).
 * 📍 **Geolocations & Radius Filtering**: Search Significant Locations, Routine caches, and Apple Maps visits with **Haversine radius filtering** (`latitude`, `longitude`, `radius_km`).
 * 🌐 **Web Activity**: Parse Safari & Chrome browsing history, search engine queries, bookmarks, and downloads.
-* 📦 **Installed Applications**: Inspect installed apps, bundle identifiers, install timestamps, and granted permissions.
+* 📱 **Installed Applications**: Inspect installed apps, bundle identifiers, install timestamps, and granted permissions.
+* 🩺 **Health & Biometrics**: Query steps, heart rate, workouts, and sleep data.
+* 📝 **Notes & Memos**: Search Apple Notes, Voice Memos, Reminders, and Calendar events.
+* 🖼️ **Photos & Media**: Analyze photo metadata, EXIF (GPS), camera model, and deleted items.
+* 📶 **Network Connections**: Trace Wi-Fi networks, Bluetooth devices, Cell Towers, and AirDrop connections.
+* 🔋 **System State**: Extract battery levels, power cycles, lock/unlock states, and KnowledgeC/Biome events.
 * ⏱️ **Unified Chronological Timeline**: Reconstruct multi-source event timelines across all artifacts within specific investigation windows.
 * 🛡️ **100% Artifact Coverage & Safe SQL**:
   * `list_available_artifacts` & `get_raw_artifact_data` for notes, health, photos, biome, knowledgeC, etc.
