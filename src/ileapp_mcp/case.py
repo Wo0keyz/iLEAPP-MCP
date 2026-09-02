@@ -1,6 +1,7 @@
 import contextlib
 import csv
 import logging
+import os
 import re
 import sqlite3
 import threading
@@ -25,6 +26,20 @@ class CaseManager:
 
         if case_dir:
             self.load_case(case_dir)
+        else:
+            # Auto-resume state if available
+            try:
+                import os
+                import tempfile
+
+                state_file = os.path.join(tempfile.gettempdir(), ".ileapp_mcp_last_case")
+                if os.path.exists(state_file):
+                    with open(state_file, encoding="utf-8") as f:
+                        saved_path = f.read().strip()
+                    if saved_path and os.path.exists(saved_path):
+                        self.load_case(saved_path)
+            except Exception as e:
+                logger.debug("Could not load saved state: %s", e)
 
     def load_case(self, path: str | Path) -> bool:
         """Load and index an iLEAPP case directory."""
@@ -39,6 +54,17 @@ class CaseManager:
             self._index_files()
             self.is_loaded = True
             logger.info("Loaded iLEAPP case from %s (root: %s)", target_path, self._report_root)
+
+            # Persist state to survive stateless MCP clients (like Crush restarting the process)
+            try:
+                import tempfile
+
+                state_file = os.path.join(tempfile.gettempdir(), ".ileapp_mcp_last_case")
+                with open(state_file, "w", encoding="utf-8") as f:
+                    f.write(str(target_path))
+            except Exception as e:
+                logger.debug("Could not save state: %s", e)
+
             return True
 
     def _find_report_root(self, root: Path) -> Path:
