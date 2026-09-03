@@ -196,7 +196,16 @@ class CaseManager:
             cursor.execute(paginated_query, params)
             rows_raw = cursor.fetchall()
             columns = [d[0] for d in cursor.description] if cursor.description else []
-            rows = [dict(row) for row in rows_raw]
+
+            rows = []
+            for row in rows_raw:
+                sanitized = []
+                for v in row:
+                    if isinstance(v, bytes):
+                        sanitized.append(v.hex()[:256] + ("..." if len(v.hex()) > 256 else ""))
+                    else:
+                        sanitized.append(v)
+                rows.append(dict(zip(columns, sanitized, strict=False)))
 
             if total_count == 0:
                 total_count = len(rows)
@@ -214,7 +223,13 @@ class CaseManager:
             cursor.execute(query, params)
             columns = [d[0] for d in cursor.description] if cursor.description else []
             for row in cursor:
-                yield dict(zip(columns, row, strict=False))
+                sanitized = []
+                for v in row:
+                    if isinstance(v, bytes):
+                        sanitized.append(v.hex()[:256] + ("..." if len(v.hex()) > 256 else ""))
+                    else:
+                        sanitized.append(v)
+                yield dict(zip(columns, sanitized, strict=False))
 
     def read_tsv_records(
         self,
