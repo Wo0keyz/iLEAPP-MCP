@@ -1,4 +1,6 @@
+import contextlib
 import logging
+import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -6,6 +8,25 @@ from ileapp_mcp.case import CaseManager
 from ileapp_mcp.models import PaginatedResult, WebRecord
 
 logger = logging.getLogger(__name__)
+
+
+def _find_field(keys: list[str], raw: dict[str, Any]) -> Any | None:
+    norm_raw = {
+        re.sub(r"[\s_-]+", "", str(k).lower()): v
+        for k, v in raw.items()
+        if v is not None and v != ""
+    }
+    for k in keys:
+        norm_k = re.sub(r"[\s_-]+", "", k.lower())
+        if norm_k in norm_raw:
+            return norm_raw[norm_k]
+    for k in keys:
+        norm_k = re.sub(r"[\s_-]+", "", k.lower())
+        if len(norm_k) >= 3:
+            for raw_k, raw_v in norm_raw.items():
+                if norm_k in raw_k or raw_k in norm_k:
+                    return raw_v
+    return None
 
 
 def _extract_search_term_from_url(url: str) -> str | None:
@@ -31,74 +52,32 @@ def _extract_search_term_from_url(url: str) -> str | None:
 def _normalize_web_record(
     raw: dict[str, Any], default_browser: str = "Safari", default_type: str = "history"
 ) -> WebRecord:
-    """Normalize fields across Safari, Chrome, and other browser artifacts."""
-    # Find timestamp
-    ts = None
-    for k in [
-        "Visit Time",
-        "Date",
-        "Timestamp",
-        "Last Visited",
-        "Created Date",
-        "Time",
-        "Date/Time",
-    ]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                ts = str(raw_v).strip()
-                break
-        if ts:
-            break
+    """Normalize fields across Safari, Chrome, Firefox, DuckDuckGo, and Tor artifacts."""
+    ts_raw = _find_field(
+        ["Visit Time", "Date", "Timestamp", "Last Visited", "Created Date", "Time", "Date/Time"],
+        raw,
+    )
+    ts = str(ts_raw).strip() if ts_raw else None
 
-    # Find URL
-    url = None
-    for k in ["URL", "Visited URL", "Link", "Address", "Location"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                url = str(raw_v).strip()
-                break
-        if url:
-            break
+    url_raw = _find_field(["URL", "Visited URL", "Link", "Address", "Location", "Page URL"], raw)
+    url = str(url_raw).strip() if url_raw else None
 
-    # Find title
-    title = None
-    for k in ["Title", "Page Title", "Name", "Bookmark Title"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                title = str(raw_v).strip()
-                break
-        if title:
-            break
+    title_raw = _find_field(["Title", "Page Title", "Name", "Bookmark Title", "Topic"], raw)
+    title = str(title_raw).strip() if title_raw else None
 
-    # Find visit count
+    vc_raw = _find_field(["Visit Count", "Visits", "Count"], raw)
     visit_count: int | None = None
-    for k in ["Visit Count", "Visits", "Count"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                try:
-                    visit_count = int(str(raw_v).strip())
-                    break
-                except ValueError:
-                    pass
-        if visit_count is not None:
-            break
+    if vc_raw is not None:
+        with contextlib.suppress(ValueError):
+            visit_count = int(str(vc_raw).strip())
 
-    # Find search term directly or parse from URL
-    search_term = None
-    for k in ["Search Term", "Search Query", "Search", "Query"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                val = str(raw_v).strip()
-                if val and val != "None":
-                    search_term = val
-                    break
-        if search_term:
-            break
-
+    search_raw = _find_field(["Search Term", "Search Query", "Search", "Query"], raw)
+    search_term = (
+        str(search_raw).strip() if search_raw and str(search_raw).lower() != "none" else None
+    )
     if not search_term and url:
         search_term = _extract_search_term_from_url(url)
 
-    # Determine record type
     rec_type = default_type
     if search_term and rec_type == "history":
         rec_type = "search"
@@ -132,44 +111,80 @@ def get_web_activity(
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
 
-    all_records: list[WebRecord] = []
-    target_hints = ["safari", "chrome", "browser", "web_history", "bookmarks", "downloads", "web"]
+    target_hints = [
+        "safari",
+        "chrome",
+        "firefox",
+        "duckduckgo",
+        "onion",
+        "ornet",
+        "browser",
+        "web_history",
+        "bookmarks",
+        "downloads",
+        "web",
+        "search",
+        "tab",
+    ]
+
+    seen = set()
+    filtered: list[WebRecord] = []
+    total_count = 0
+
+    def process_row(r_dict: dict[str, Any], default_browser: str, default_type: str) -> None:
+        nonlocal total_count
+        rec = _normalize_web_record(
+            r_dict, default_browser=default_browser, default_type=default_type
+        )
+
+        if not rec.url and not rec.title and not rec.search_term:
+            return
+
+        if activity_type.lower() != "all" and activity_type.lower() not in rec.record_type.lower():
+            return
+
+        if domain:
+            dom_low = domain.lower()
+            url_match = rec.url and dom_low in rec.url.lower()
+            title_match = rec.title and dom_low in rec.title.lower()
+            if not (url_match or title_match):
+                return
+
+        if search_query:
+            sq_low = search_query.lower()
+            st_match = rec.search_term and sq_low in rec.search_term.lower()
+            url_match = rec.url and sq_low in rec.url.lower()
+            title_match = rec.title and sq_low in rec.title.lower()
+            if not (st_match or url_match or title_match):
+                return
+
+        if start_date and rec.timestamp and rec.timestamp < start_date:
+            return
+
+        if end_date and rec.timestamp and rec.timestamp > end_date:
+            return
+
+        key = (rec.timestamp or "", rec.browser, rec.url or "", rec.record_type)
+        if key not in seen:
+            seen.add(key)
+            total_count += 1
+            if len(filtered) < offset + limit:
+                filtered.append(rec)
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():
         stem = db_path.stem.lower()
         if any(t in stem for t in target_hints):
-            browser = "Chrome" if "chrome" in stem else "Safari"
-            rec_type = "history"
-            if "bookmark" in stem:
-                rec_type = "bookmark"
-            elif "download" in stem:
-                rec_type = "download"
-            elif "tab" in stem:
-                rec_type = "tab"
+            browser = "Safari"
+            if "chrome" in stem:
+                browser = "Chrome"
+            elif "firefox" in stem:
+                browser = "Firefox"
+            elif "duckduckgo" in stem:
+                browser = "DuckDuckGo"
+            elif "onion" in stem or "ornet" in stem:
+                browser = "Tor/Onion Browser"
 
-            try:
-                conn = case.get_sqlite_connection(db_path)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                )
-                tables = [r[0] for r in cursor.fetchall()]
-                for table in tables:
-                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
-                        all_records.append(
-                            _normalize_web_record(
-                                row_dict, default_browser=browser, default_type=rec_type
-                            )
-                        )
-            except Exception as e:
-                logger.debug("Error reading web activity from SQLite %s: %s", db_path, e)
-
-    # 2. Search TSV files
-    for tsv_path in case.get_all_tsv_files():
-        stem = tsv_path.stem.lower()
-        if any(t in stem for t in target_hints):
-            browser = "Chrome" if "chrome" in stem else "Safari"
             rec_type = "history"
             if "bookmark" in stem:
                 rec_type = "bookmark"
@@ -180,53 +195,62 @@ def get_web_activity(
             elif "search" in stem:
                 rec_type = "search"
 
-            rows = case.read_tsv_records(tsv_path)
-            for r in rows:
-                all_records.append(
-                    _normalize_web_record(r, default_browser=browser, default_type=rec_type)
+            try:
+                conn = case.get_sqlite_connection(db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
                 )
+                tables = [r[0] for r in cursor.fetchall()]
+                for table in tables:
+                    t_low = table.lower()
+                    t_type = rec_type
+                    if "bookmark" in t_low:
+                        t_type = "bookmark"
+                    elif "download" in t_low:
+                        t_type = "download"
+                    elif "tab" in t_low:
+                        t_type = "tab"
+                    elif "search" in t_low:
+                        t_type = "search"
 
-    # De-duplicate
-    seen = set()
-    deduped: list[WebRecord] = []
-    for w in all_records:
-        key = (w.timestamp or "", w.url or "", w.title or "", w.record_type)
-        if key not in seen:
-            seen.add(key)
-            deduped.append(w)
+                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
+                        process_row(row_dict, default_browser=browser, default_type=t_type)
+            except Exception as e:
+                logger.debug("Error reading web SQLite %s: %s", db_path, e)
 
-    # Apply filters
-    filtered: list[WebRecord] = []
-    for w in deduped:
-        if activity_type.lower() != "all" and activity_type.lower() not in w.record_type.lower():
-            continue
+    # 2. Search TSV files
+    for tsv_path in case.get_all_tsv_files():
+        stem = tsv_path.stem.lower()
+        if any(t in stem for t in target_hints):
+            browser = "Safari"
+            if "chrome" in stem:
+                browser = "Chrome"
+            elif "firefox" in stem:
+                browser = "Firefox"
+            elif "duckduckgo" in stem:
+                browser = "DuckDuckGo"
+            elif "onion" in stem or "ornet" in stem:
+                browser = "Tor/Onion Browser"
 
-        if domain:
-            dom = domain.lower()
-            url_match = w.url and dom in w.url.lower()
-            title_match = w.title and dom in w.title.lower()
-            if not (url_match or title_match):
-                continue
+            rec_type = "history"
+            if "bookmark" in stem:
+                rec_type = "bookmark"
+            elif "download" in stem:
+                rec_type = "download"
+            elif "tab" in stem:
+                rec_type = "tab"
+            elif "search" in stem:
+                rec_type = "search"
 
-        if search_query:
-            sq = search_query.lower()
-            st_match = w.search_term and sq in w.search_term.lower()
-            url_match = w.url and sq in w.url.lower()
-            title_match = w.title and sq in w.title.lower()
-            if not (st_match or url_match or title_match):
-                continue
-
-        if start_date and w.timestamp and w.timestamp < start_date:
-            continue
-
-        if end_date and w.timestamp and w.timestamp > end_date:
-            continue
-
-        filtered.append(w)
+            try:
+                for row_dict in case.iter_tsv_rows(tsv_path):
+                    process_row(row_dict, default_browser=browser, default_type=rec_type)
+            except Exception as e:
+                logger.debug("Error reading web TSV %s: %s", tsv_path, e)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 
-    total_count = len(filtered)
     page = filtered[offset : offset + limit]
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None

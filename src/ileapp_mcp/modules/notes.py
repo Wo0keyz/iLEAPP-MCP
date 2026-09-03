@@ -1,7 +1,5 @@
 import logging
 import re
-from collections.abc import Generator
-from pathlib import Path
 from typing import Any
 
 from ileapp_mcp.case import CaseManager
@@ -11,19 +9,21 @@ logger = logging.getLogger(__name__)
 
 
 def _find_field(keys: list[str], raw: dict[str, Any]) -> Any | None:
-    norm_targets = [re.sub(r"[\s_-]+", "", k.lower()) for k in keys]
-    for raw_k, raw_v in raw.items():
-        if raw_v is None or raw_v == "":
-            continue
-        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
-        if raw_norm in norm_targets:
-            return raw_v
-    for raw_k, raw_v in raw.items():
-        if raw_v is None or raw_v == "":
-            continue
-        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
-        if any(target in raw_norm for target in norm_targets):
-            return raw_v
+    norm_raw = {
+        re.sub(r"[\s_-]+", "", str(k).lower()): v
+        for k, v in raw.items()
+        if v is not None and v != ""
+    }
+    for k in keys:
+        norm_k = re.sub(r"[\s_-]+", "", k.lower())
+        if norm_k in norm_raw:
+            return norm_raw[norm_k]
+    for k in keys:
+        norm_k = re.sub(r"[\s_-]+", "", k.lower())
+        if len(norm_k) >= 3:
+            for raw_k, raw_v in norm_raw.items():
+                if norm_k in raw_k or raw_k in norm_k:
+                    return raw_v
     return None
 
 
@@ -36,96 +36,127 @@ def get_notes_and_memos(
     limit: int = 50,
     offset: int = 0,
 ) -> PaginatedResult[NoteRecord]:
+    """Retrieve personal notes, voice recordings, reminders, and calendar events."""
     if not case.is_loaded:
         raise ValueError("No case loaded.")
 
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
-    results: list[NoteRecord] = []
-    global_total_count = 0
 
-    all_files = list(case.get_all_tsv_files()) + list(case.get_all_sqlite_dbs())
-    for file_path in all_files:
-        stem = file_path.stem
-        name_low = stem.lower()
-        if any(x in name_low for x in ["note", "memo", "reminder", "calendar", "event"]):
-            if note_type and note_type.lower() not in name_low:
-                continue
+    target_hints = ["note", "memo", "reminder", "calendar", "event"]
 
+    seen = set()
+    filtered: list[NoteRecord] = []
+    total_count = 0
+
+    def process_row(row: dict[str, Any], file_stem: str) -> None:
+        nonlocal total_count
+        name_low = file_stem.lower()
+
+        ts = _find_field(
+            [
+                "Creation Date",
+                "Last Modified Date",
+                "Timestamp",
+                "Date",
+                "Start Date",
+                "Creation",
+                "LastModified",
+                "Time",
+            ],
+            row,
+        )
+        ts_str = str(ts).strip() if ts else None
+        if start_date and ts_str and ts_str < start_date:
+            return
+        if end_date and ts_str and ts_str > end_date:
+            return
+
+        title = _find_field(["Title", "Subject", "Name", "Heading", "Summary"], row)
+        content = _find_field(
+            ["Content", "Body", "Text", "Snippet", "Summary", "Data", "Description"], row
+        )
+        fpath = _find_field(["Path", "File", "Attachment", "URI"], row)
+
+        title_str = str(title).strip() if title else None
+        content_str = str(content).strip() if content else None
+        fpath_str = str(fpath).strip() if fpath else None
+
+        if not title_str and not content_str and not fpath_str:
+            return
+
+        if keyword:
+            kw_low = keyword.lower()
+            search_space = f"{title_str or ''} {content_str or ''}".lower()
+            if kw_low not in search_space:
+                return
+
+        ntype = "Notes"
+        if "memo" in name_low or "voice" in name_low:
+            ntype = "Voice Memo"
+        elif "reminder" in name_low:
+            ntype = "Reminder"
+        elif "calendar" in name_low or "event" in name_low:
+            ntype = "Calendar"
+
+        if note_type:
+            nt_norm = re.sub(r"[\s_-]+", "", note_type.lower())
+            rec_norm = re.sub(r"[\s_-]+", "", ntype.lower())
+            stem_norm = re.sub(r"[\s_-]+", "", name_low)
+            if nt_norm not in rec_norm and nt_norm not in stem_norm:
+                return
+
+        key = (ts_str or "", ntype, title_str or "", (content_str or "")[:50])
+        if key not in seen:
+            seen.add(key)
+            total_count += 1
+            if len(filtered) < offset + limit:
+                filtered.append(
+                    NoteRecord(
+                        timestamp=ts_str,
+                        note_type=ntype,
+                        title=title_str,
+                        content=content_str,
+                        file_path=fpath_str,
+                        raw_data=row,
+                    )
+                )
+
+    # 1. Search SQLite databases
+    for db_path in case.get_all_sqlite_dbs():
+        stem = db_path.stem.lower()
+        if any(h in stem for h in target_hints):
             try:
-                if file_path.suffix.lower() in [".tsv", ".csv"]:
-                    rows_iterator = case.iter_tsv_rows(file_path)
-                else:
-                    try:
-                        conn = case.get_sqlite_connection(file_path)
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                        )
-                        tables = [r[0] for r in cursor.fetchall()]
-                    except Exception:
-                        tables = [stem]
-
-                    def yield_from_tables(
-                        fp: Path, tbls: list[str]
-                    ) -> Generator[dict[str, Any], None, None]:
-                        for tbl in tbls:
-                            yield from case.iter_sqlite_rows(fp, f"SELECT * FROM `{tbl}`")
-
-                    rows_iterator = yield_from_tables(file_path, tables)
-
-                if rows_iterator:
-                    for row in rows_iterator:
-                        ts = _find_field(["timestamp", "date", "creation", "lastmodified"], row)
-                        if ts:
-                            ts = str(ts)
-                            if start_date and ts < start_date:
-                                continue
-                            if end_date and ts > end_date:
-                                continue
-
-                        title = _find_field(["title", "subject", "name", "heading"], row)
-                        content = _find_field(
-                            ["content", "body", "text", "snippet", "summary", "data"], row
-                        )
-                        fpath = _find_field(["path", "file", "attachment", "uri"], row)
-
-                        if keyword:
-                            search_space = f"{title or ''} {content or ''}".lower()
-                            if keyword.lower() not in search_space:
-                                continue
-
-                        ntype = "Notes"
-                        if "memo" in name_low:
-                            ntype = "Voice Memo"
-                        elif "reminder" in name_low:
-                            ntype = "Reminder"
-                        elif "calendar" in name_low or "event" in name_low:
-                            ntype = "Calendar"
-
-                        if offset <= global_total_count < offset + limit:
-                            results.append(
-                                NoteRecord(
-                                    timestamp=str(ts) if ts else None,
-                                    note_type=ntype,
-                                    title=str(title) if title else None,
-                                    content=str(content) if content else None,
-                                    file_path=str(fpath) if fpath else None,
-                                    raw_data=row,
-                                )
-                            )
-                        global_total_count += 1
-
+                conn = case.get_sqlite_connection(db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+                tables = [r[0] for r in cursor.fetchall()]
+                for tbl in tables:
+                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{tbl}`"):
+                        process_row(row_dict, db_path.stem)
             except Exception as e:
-                logger.warning(f"Error querying notes artifact {stem}: {e}")
+                logger.debug("Error reading notes SQLite %s: %s", db_path, e)
 
-    total_count = global_total_count
-    paginated_items = results
+    # 2. Search TSV files
+    for tsv_path in case.get_all_tsv_files():
+        stem = tsv_path.stem.lower()
+        if any(h in stem for h in target_hints):
+            try:
+                for row_dict in case.iter_tsv_rows(tsv_path):
+                    process_row(row_dict, tsv_path.stem)
+            except Exception as e:
+                logger.debug("Error reading notes TSV %s: %s", tsv_path, e)
+
+    filtered.sort(key=lambda x: x.timestamp or "")
+
+    page = filtered[offset : offset + limit]
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None
 
     return PaginatedResult[NoteRecord](
-        items=paginated_items,
+        items=page,
         total_count=total_count,
         has_more=has_more,
         limit=limit,

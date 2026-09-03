@@ -48,17 +48,25 @@ def list_available_artifacts(case: CaseManager) -> list[ArtifactInfo]:
         except Exception as e:
             logger.debug("Error indexing SQLite DB %s: %s", db_path, e)
 
-    # 2. Inspect TSV files
+    # 2. Inspect TSV files using fast line counting
     for tsv_path in case.get_all_tsv_files():
         tsv_rel = str(tsv_path.relative_to(case.case_path))
-        records = case.read_tsv_records(tsv_path)
+        row_count = None
+        try:
+            with open(tsv_path, "rb") as f:
+                # Count non-empty lines minus header
+                lines = sum(1 for line in f if line.strip())
+                row_count = max(0, lines - 1)
+        except Exception:
+            pass
+
         artifacts.append(
             ArtifactInfo(
                 name=tsv_path.stem,
                 category=_infer_category(tsv_path.stem),
                 format="tsv",
                 file_path=tsv_rel,
-                row_count=len(records),
+                row_count=row_count,
                 description=f"Tabular export {tsv_path.name}",
             )
         )
@@ -74,7 +82,10 @@ def _infer_category(name: str) -> str:
         return "Communications/Messages"
     if any(k in lower for k in ["call", "facetime", "voip"]):
         return "Communications/Calls"
-    if any(k in lower for k in ["safari", "chrome", "bookmark", "download", "web", "history"]):
+    if any(
+        k in lower
+        for k in ["safari", "chrome", "bookmark", "download", "web", "history", "firefox"]
+    ):
         return "Web Browsing"
     if any(
         k in lower for k in ["location", "routine", "map", "gps", "cell", "wifi", "significant"]
@@ -111,24 +122,24 @@ def get_raw_artifact_data(
         db_part, table_part = artifact_name.split(":", 1)
         db_path = case.get_sqlite_path(db_part)
         if db_path:
-            # Sanitize table_part to prevent SQL injection via backticks
             safe_table = table_part.replace("`", "").replace("'", "")
-            cols, fetched_rows, total = case.query_sqlite(
-                db_path, f"SELECT * FROM `{safe_table}`", limit=limit, offset=offset
-            )
-            # Filter if requested
-            filtered_rows = fetched_rows
+            where_sql = ""
+            params: list[Any] = []
             if filters:
-                filtered_rows = [
-                    r
-                    for r in fetched_rows
-                    if all(
-                        k in r and str(v).lower() in str(r[k]).lower() for k, v in filters.items()
-                    )
-                ]
+                clauses = []
+                for k, v in filters.items():
+                    safe_col = k.replace("`", "").replace("'", "")
+                    clauses.append(f"`{safe_col}` LIKE ?")
+                    params.append(f"%{v}%")
+                where_sql = f" WHERE {' AND '.join(clauses)}"
+
+            query = f"SELECT * FROM `{safe_table}`{where_sql}"
+            cols, fetched_rows, total = case.query_sqlite(
+                db_path, query, params=tuple(params), limit=limit, offset=offset
+            )
             has_more = (offset + limit) < total
             return PaginatedResult[dict[str, Any]](
-                items=filtered_rows,
+                items=fetched_rows,
                 total_count=total,
                 has_more=has_more,
                 limit=limit,
@@ -139,18 +150,21 @@ def get_raw_artifact_data(
     # 2. Try TSV file match
     tsv_path = case.get_tsv_path(artifact_name)
     if tsv_path:
-        all_tsv_records = case.read_tsv_records(tsv_path)
-        if filters:
-            all_tsv_records = [
-                r
-                for r in all_tsv_records
-                if all(k in r and str(v).lower() in str(r[k]).lower() for k, v in filters.items())
-            ]
-        total = len(all_tsv_records)
-        page = all_tsv_records[offset : offset + limit]
+        matched: list[dict[str, Any]] = []
+        total = 0
+        for r in case.iter_tsv_rows(tsv_path):
+            if filters and not all(
+                k in r and str(v).lower() in str(r[k]).lower() for k, v in filters.items()
+            ):
+                continue
+            total += 1
+            if len(matched) < offset + limit:
+                matched.append(r)
+
+        page = matched[offset : offset + limit]
         has_more = (offset + limit) < total
         return PaginatedResult[dict[str, Any]](
-            items=page,  # type: ignore
+            items=page,
             total_count=total,
             has_more=has_more,
             limit=limit,
@@ -168,8 +182,19 @@ def get_raw_artifact_data(
             )
             if cursor.fetchone():
                 safe_artifact = artifact_name.replace("`", "").replace("'", "")
+                where_sql = ""
+                params = []
+                if filters:
+                    clauses = []
+                    for k, v in filters.items():
+                        safe_col = k.replace("`", "").replace("'", "")
+                        clauses.append(f"`{safe_col}` LIKE ?")
+                        params.append(f"%{v}%")
+                    where_sql = f" WHERE {' AND '.join(clauses)}"
+
+                query = f"SELECT * FROM `{safe_artifact}`{where_sql}"
                 cols, fetched_rows, total = case.query_sqlite(
-                    db_path, f"SELECT * FROM `{safe_artifact}`", limit=limit, offset=offset
+                    db_path, query, params=tuple(params), limit=limit, offset=offset
                 )
                 has_more = (offset + limit) < total
                 return PaginatedResult[dict[str, Any]](

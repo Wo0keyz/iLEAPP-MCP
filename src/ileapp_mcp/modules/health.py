@@ -9,19 +9,21 @@ logger = logging.getLogger(__name__)
 
 
 def _find_field(keys: list[str], raw: dict[str, Any]) -> Any | None:
-    norm_targets = [re.sub(r"[\s_-]+", "", k.lower()) for k in keys]
-    for raw_k, raw_v in raw.items():
-        if raw_v is None or raw_v == "":
-            continue
-        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
-        if raw_norm in norm_targets:
-            return raw_v
-    for raw_k, raw_v in raw.items():
-        if raw_v is None or raw_v == "":
-            continue
-        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
-        if any(target in raw_norm for target in norm_targets):
-            return raw_v
+    norm_raw = {
+        re.sub(r"[\s_-]+", "", str(k).lower()): v
+        for k, v in raw.items()
+        if v is not None and v != ""
+    }
+    for k in keys:
+        norm_k = re.sub(r"[\s_-]+", "", k.lower())
+        if norm_k in norm_raw:
+            return norm_raw[norm_k]
+    for k in keys:
+        norm_k = re.sub(r"[\s_-]+", "", k.lower())
+        if len(norm_k) >= 3:
+            for raw_k, raw_v in norm_raw.items():
+                if norm_k in raw_k or raw_k in norm_k:
+                    return raw_v
     return None
 
 
@@ -33,75 +35,152 @@ def get_health_data(
     limit: int = 50,
     offset: int = 0,
 ) -> PaginatedResult[HealthRecord]:
+    """Retrieve biometric and physical activity records (steps, heart rate, sleep, workouts)."""
     if not case.is_loaded:
         raise ValueError("No iLEAPP case loaded.")
 
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
-    results: list[HealthRecord] = []
-    global_total_count = 0
 
-    all_files = list(case.get_all_tsv_files()) + list(case.get_all_sqlite_dbs())
-    for file_path in all_files:
-        stem = file_path.stem
-        name_low = stem.lower()
-        if "health" in name_low or "biom" in name_low or "step" in name_low:
-            if metric_type and metric_type.lower() not in name_low:
-                continue
+    target_hints = [
+        "health",
+        "step",
+        "heart",
+        "workout",
+        "sleep",
+        "fitbit",
+        "fitness",
+        "weight",
+        "oura",
+        "biom",
+    ]
 
+    seen = set()
+    filtered: list[HealthRecord] = []
+    total_count = 0
+
+    def process_row(row: dict[str, Any], file_stem: str) -> None:
+        nonlocal total_count
+        name_low = file_stem.lower()
+
+        ts = _find_field(
+            [
+                "Start Time",
+                "Sleep Start Time",
+                "Timestamp",
+                "Creation Date",
+                "Date",
+                "Time",
+                "Start Date",
+                "Added to Health",
+            ],
+            row,
+        )
+        ts_str = str(ts).strip() if ts else None
+        if start_date and ts_str and ts_str < start_date:
+            return
+        if end_date and ts_str and ts_str > end_date:
+            return
+
+        mtype = _find_field(["Metric", "Type", "Category", "Name", "Activity"], row)
+        if not mtype:
+            if "step" in name_low:
+                mtype = "Steps"
+            elif "heart" in name_low:
+                mtype = "Heart Rate"
+            elif "sleep" in name_low:
+                mtype = "Sleep"
+            elif "workout" in name_low:
+                mtype = "Workout"
+            elif "weight" in name_low:
+                mtype = "Weight"
+            else:
+                mtype = file_stem
+
+        mtype_str = str(mtype).strip()
+        if (
+            metric_type
+            and metric_type.lower() not in mtype_str.lower()
+            and metric_type.lower() not in name_low
+        ):
+            return
+
+        val = _find_field(
+            [
+                "Steps",
+                "Hours Worn",
+                "Sleep State",
+                "Time Asleep",
+                "Heart Rate",
+                "Value",
+                "Quantity",
+                "Count",
+                "BPM",
+                "Duration",
+                "Measurement",
+            ],
+            row,
+        )
+        unit = _find_field(["Unit", "Measurement", "Metric"], row)
+        source = _find_field(
+            ["Device Name", "Device ID", "Manufacturer", "Source", "Device", "Hardware"], row
+        )
+
+        val_str = str(val).strip() if val is not None else None
+        unit_str = str(unit).strip() if unit else None
+        source_str = str(source).strip() if source else None
+
+        key = (ts_str or "", mtype_str, val_str or "", source_str or "")
+        if key not in seen:
+            seen.add(key)
+            total_count += 1
+            if len(filtered) < offset + limit:
+                filtered.append(
+                    HealthRecord(
+                        timestamp=ts_str,
+                        metric_type=mtype_str,
+                        value=val_str,
+                        unit=unit_str,
+                        source_device=source_str,
+                        raw_data=row,
+                    )
+                )
+
+    # 1. Search SQLite databases
+    for db_path in case.get_all_sqlite_dbs():
+        stem = db_path.stem.lower()
+        if any(h in stem for h in target_hints):
             try:
-                if file_path.suffix.lower() in [".tsv", ".csv"]:
-                    rows_iterator = case.iter_tsv_rows(file_path)
-                else:
-                    rows_iterator = case.iter_sqlite_rows(file_path, f"SELECT * FROM `{stem}`")
-
-                for row in rows_iterator:
-                    ts = _find_field(["timestamp", "date", "time", "start", "creation"], row)
-                    if ts:
-                        ts = str(ts)
-                        if start_date and ts < start_date:
-                            continue
-                        if end_date and ts > end_date:
-                            continue
-
-                    mtype = _find_field(["metric", "type", "category", "name", "activity"], row)
-                    if not mtype:
-                        if "step" in name_low:
-                            mtype = "Steps"
-                        elif "heart" in name_low:
-                            mtype = "Heart Rate"
-                        elif "sleep" in name_low:
-                            mtype = "Sleep"
-                        else:
-                            mtype = stem
-
-                    val = _find_field(["value", "qty", "quantity", "count", "bpm", "duration"], row)
-                    unit = _find_field(["unit", "measurement"], row)
-                    source = _find_field(["source", "device", "hardware", "bundle"], row)
-
-                    if offset <= global_total_count < offset + limit:
-                        results.append(
-                            HealthRecord(
-                                timestamp=str(ts) if ts else None,
-                                metric_type=str(mtype),
-                                value=str(val) if val else None,
-                                unit=str(unit) if unit else None,
-                                source_device=str(source) if source else None,
-                                raw_data=row,
-                            )
-                        )
-                    global_total_count += 1
-
+                conn = case.get_sqlite_connection(db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+                tables = [r[0] for r in cursor.fetchall()]
+                for tbl in tables:
+                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{tbl}`"):
+                        process_row(row_dict, db_path.stem)
             except Exception as e:
-                logger.warning(f"Error querying health artifact {stem}: {e}")
+                logger.debug("Error reading health SQLite %s: %s", db_path, e)
 
-    total_count = global_total_count
-    paginated_items = results
+    # 2. Search TSV files
+    for tsv_path in case.get_all_tsv_files():
+        stem = tsv_path.stem.lower()
+        if any(h in stem for h in target_hints):
+            try:
+                for row_dict in case.iter_tsv_rows(tsv_path):
+                    process_row(row_dict, tsv_path.stem)
+            except Exception as e:
+                logger.debug("Error reading health TSV %s: %s", tsv_path, e)
+
+    filtered.sort(key=lambda x: x.timestamp or "")
+
+    page = filtered[offset : offset + limit]
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None
 
     return PaginatedResult[HealthRecord](
-        items=paginated_items,
+        items=page,
         total_count=total_count,
         has_more=has_more,
         limit=limit,

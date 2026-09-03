@@ -10,22 +10,21 @@ logger = logging.getLogger(__name__)
 
 
 def _find_field(keys: list[str], raw: dict[str, Any]) -> Any | None:
-    """Find a value in raw dictionary matching any key in keys (case- and delimiter-insensitive)."""
-    norm_targets = [re.sub(r"[\s_-]+", "", k.lower()) for k in keys]
-    for raw_k, raw_v in raw.items():
-        if raw_v is None or raw_v == "":
-            continue
-        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
-        if raw_norm in norm_targets:
-            return raw_v
-    # Secondary check: partial substring
-    for raw_k, raw_v in raw.items():
-        if raw_v is None or raw_v == "":
-            continue
-        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
-        for nt in norm_targets:
-            if nt in raw_norm or raw_norm in nt:
-                return raw_v
+    norm_raw = {
+        re.sub(r"[\s_-]+", "", str(k).lower()): v
+        for k, v in raw.items()
+        if v is not None and v != ""
+    }
+    for k in keys:
+        norm_k = re.sub(r"[\s_-]+", "", k.lower())
+        if norm_k in norm_raw:
+            return norm_raw[norm_k]
+    for k in keys:
+        norm_k = re.sub(r"[\s_-]+", "", k.lower())
+        if len(norm_k) >= 3:
+            for raw_k, raw_v in norm_raw.items():
+                if norm_k in raw_k or raw_k in norm_k:
+                    return raw_v
     return None
 
 
