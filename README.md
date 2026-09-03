@@ -86,6 +86,19 @@ Add the server to your `claude_desktop_config.json`:
 }
 ```
 
+### 3. Charm Crush Configuration
+Add to your Crush MCP configuration file (`~/.config/crush/crush.json`):
+```json
+{
+  "mcpServers": {
+    "ileapp": {
+      "command": "ileapp-mcp",
+      "args": ["/home/user/iPhone-iLEAPP_Output"]
+    }
+  }
+}
+```
+
 ---
 
 ## 🛠️ Available MCP Tools
@@ -96,20 +109,25 @@ Add the server to your `claude_desktop_config.json`:
 | `get_case_info` | Get case status, loaded databases, and artifact statistics | *None* |
 | `get_device_info` | Get device hardware, iOS version, serial, IMEI, timezone | *None* |
 | `get_messages` | Query SMS, iMessage, WhatsApp, Telegram, Signal messages | `sender`, `recipient`, `keyword`, `start_date`, `end_date`, `app`, `limit`, `offset` |
-| `get_call_history` | Query call history with duration and type | `phone_number`, `call_type`, `start_date`, `end_date`, `limit`, `offset` |
+| `get_call_history` | Query call history with duration and type (Cellular, FaceTime) | `phone_number`, `call_type`, `start_date`, `end_date`, `limit`, `offset` |
 | `get_location_history`| Query GPS and Significant Locations with radius search | `latitude`, `longitude`, `radius_km`, `start_date`, `end_date`, `limit`, `offset` |
-| `get_web_activity` | Query web browsing, search queries, and downloads | `domain`, `search_query`, `activity_type`, `start_date`, `end_date`, `limit`, `offset` |
-| `get_installed_apps` | Query installed iOS applications and permissions | `app_name`, `bundle_id`, `limit`, `offset` |
-| `get_timeline` | Unified chronological stream across all forensic sources | `start_date`, `end_date`, `categories`, `limit`, `offset` |
+| `get_web_activity` | Query browsing, search queries, downloads (Safari, Chrome, Firefox, Tor) | `domain`, `search_query`, `activity_type`, `start_date`, `end_date`, `limit`, `offset` |
+| `get_installed_apps` | Query installed iOS apps, bundles, and permissions | `app_name`, `bundle_id`, `limit`, `offset` |
+| `get_health_data` | Query steps, heart rate, workouts, and sleep tracking | `metric_type`, `start_date`, `end_date`, `limit`, `offset` |
+| `get_notes_and_memos` | Search Apple Notes, Voice Memos, Reminders, and Calendar | `keyword`, `note_type`, `start_date`, `end_date`, `limit`, `offset` |
+| `get_photos_metadata` | Query photo EXIF, GPS location, camera model, deleted status | `has_gps`, `is_deleted`, `media_type`, `start_date`, `end_date`, `limit`, `offset` |
+| `get_network_connections` | Query Wi-Fi history, Bluetooth pairings, Cell Towers, AirDrop | `connection_type`, `ssid_or_name`, `start_date`, `end_date`, `limit`, `offset` |
+| `get_system_state` | Query power events, battery levels, lock cycles, screen state | `event_type`, `start_date`, `end_date`, `limit`, `offset` |
+| `get_timeline` | Unified chronological stream across all sources (Fast-path `tl.db`) | `start_date`, `end_date`, `categories`, `limit`, `offset` |
 | `list_available_artifacts` | List all discovered SQLite tables and TSV files | *None* |
-| `get_raw_artifact_data` | Query raw tabular data from any artifact | `artifact_name`, `filters`, `limit`, `offset` |
+| `get_raw_artifact_data` | Query raw tabular data from any specific artifact with filters | `artifact_name`, `filters`, `limit`, `offset` |
 | `run_readonly_sql` | Execute safe, read-only SQL queries on SQLite databases | `query`, `db_name`, `max_rows` |
 
 ---
 
 ## 🧪 Testing & Validation
 
-The repository includes a synthetic GrayKey/FFS extraction fixture generator and a full automated test suite with **100% pass rate**:
+The repository includes a synthetic GrayKey/FFS extraction fixture generator and a full automated test suite with **51 tests (100% pass rate)**:
 
 ```bash
 # Run pytest with code coverage
@@ -122,6 +140,12 @@ ruff format --check .
 # Run static type checking
 mypy src
 ```
+
+### 🛡️ Production & Forensics Hardening
+* **Zero-RAM Reservoir Streaming**: Evaluates records and filters on-the-fly, strictly capping memory consumption at `offset + limit` items to eliminate Out-Of-Memory (OOM) risks even with massive 10GB+ databases (like `sms.db` or `locationd` caches).
+* **Stateless Client Resilience**: Automatically persists the active case path to `.ileapp_mcp_last_case` in the system temporary directory so that client processes (like Charm Crush in `stdio` mode) seamlessly resume case context across restarts.
+* **RFC 8259 JSON Sanitization**: Ensures all coordinates and floats are bounded and non-NaN/non-Inf, and SQLite BLOB objects are automatically sanitized into truncated hexadecimal strings.
+* **Timeline Accelerator**: Utilizes iLEAPP's pre-compiled `_Timeline/tl.db` database directly for instant sub-second chronological timeline queries.
 
 ### 📁 Using Custom / Real CTF Extractions
 You can place your real iLEAPP output from a GrayKey extraction into a local folder (e.g. `cases/` or `data/`, which are protected by `.gitignore`), then load it with:
