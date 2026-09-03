@@ -69,22 +69,35 @@ Le **cœur d'accès aux données**. Il gère :
 * **Découverte & Indexation** : Détecte les sous-dossiers `_iLEAPP_Reports_*` et indexe l'ensemble des fichiers `.sqlite`, `.db`, `.tsv` et `.csv` dans un dictionnaire mémoire (`stem -> Path`).
 * **Protection DoS** : Limite l'exploration à 50 000 fichiers pour éviter le blocage lors d'un scan de dossier racine.
 * **Pool de Connexions SQLite Thread-Safe** : Caches de connexions par base, configurées avec `check_same_thread=False` et `row_factory = sqlite3.Row`.
-* **Générateurs à Empreinte Mémoire Nulle (Lazy-Yielding)** : Fournit `iter_sqlite_rows` et `iter_tsv_rows` qui streamment les lignes au lieu de charger les 100 000 entrées d'une table avec `fetchall()`. Cela garantit que le serveur ne subira jamais d'Out-Of-Memory (OOM) sur de très grosses extractions.
+* **Protection DoS** : Limite l'exploration à 50 000 fichiers pour éviter le blocage lors d'un scan de dossier racine.
+* **Pool de Connexions SQLite Thread-Safe** : Caches de connexions par base, configurées avec `check_same_thread=False` et `row_factory = sqlite3.Row`.
+* **Générateurs à Empreinte Mémoire Nulle (Lazy-Yielding)** : Fournit `iter_sqlite_rows` et `iter_tsv_rows` qui streamment les lignes au lieu de charger les 100 000 entrées d'une table avec `fetchall()`.
+* **Réservoir Borné en Mémoire ($O(1)$ RAM)** : Dans chaque module, les enregistrements sont évalués, filtrés et dédupliqués à la volée. La mémoire vive allouée est strictement bornée à `offset + limit` éléments, garantissant l'absence totale d'Out-Of-Memory (OOM) même sur des bases géantes de 10 Go+.
+* **Sérialisation Sûre RFC 8259** : Les données binaires (BLOBs SQLite) sont automatiquement tronquées et converties en chaînes hexadécimales lisibles. Les coordonnées géographiques et valeurs numériques sont validées contre `NaN` et `Infinity` pour ne jamais corrompre le parseur JSON du client MCP.
+* **Résilience aux Clients Stateless** : Le chemin de l'extraction active est sauvegardé dans `.ileapp_mcp_last_case` (répertoire temporaire système), permettant aux clients MCP qui redémarrent le processus en mode stdio (comme Charm Crush) de conserver l'état du cas en toute transparence.
 * **Estimateur de Pagination SQL** : `query_sqlite` intercepte les requêtes pour calculer le `COUNT(*)` sans double-pagination et injecte `LIMIT/OFFSET` de façon transparente.
-* **Parsing Multi-Encodage** : Lecture résiliente des TSV/CSV en essayant successivement `utf-8-sig`, `utf-8`, `latin-1` et `cp1252`.
+* **Parsing Multi-Encodage** : Lecture résiliente des TSV/CSV avec `errors="replace"` en essayant successivement `utf-8-sig`, `utf-8`, `latin-1` et `cp1252`.
 
-### 3.2. Normalisation Dynamique : `_find_field`
-Chaque module forensique utilise une fonction de matching de colonne insensible à la casse et aux séparateurs :
+### 3.2. Normalisation Dynamique & Priorité Ordinale : `_find_field`
+Chaque module forensique utilise une fonction de matching de colonne insensible à la casse et aux séparateurs, respectant l'ordre de priorité strict des alias définis par le développeur :
 ```python
-def _find_field(keys: list[str], raw: dict[str, Any], exclude_suffixes: tuple[str, ...] = ()) -> Any | None:
+def _find_field(keys: list[str], raw: dict[str, Any]) -> Any | None:
 ```
-* **Passe 1 (Exact match normalisé)** : Compare les chaînes épurées (`re.sub(r"[\s_-]+", "", k.lower())`).
-* **Passe 2 (Sous-chaîne avec exclusions)** : Permet de trouver `"message"` dans `"Message Content"` tout en ignorant les champs suffixes comme `"message_date"` ou `"message_id"`.
+* **Passe 1 (Priorité exacte ordonnée)** : Évalue les colonnes candidates dans l'ordre de la liste `keys`, garantissant que les colonnes primaires priment sur les alias de secours (ex: `"Value"` avant `"State"`).
+* **Passe 2 (Sous-chaîne)** : Correspondance partielle pour les variations de libellés iLEAPP.
 
-### 3.3. Calcul Géospatial : Formule de Haversine (`locations.py`)
+### 3.3. Découverte Dynamique de Tables SQLite (`sqlite_master`)
+Dans les bases SQLite d'iOS, les tables ne portent jamais le nom du fichier `.db` (ex: `healthdb_secure.sqlite` contient `samples`, `knowledgeC.db` contient `ZOBJECT`). Tous les modules interrogent systématiquement `sqlite_master` (`WHERE type='table' AND name NOT LIKE 'sqlite_%'`) pour découvrir et inspecter dynamiquement l'intégralité des tables internes.
+
+### 3.4. Accélérateur de Timeline : `tl.db` Fast-Path
+iLEAPP précompile tous les événements chronologiques dans `_Timeline/tl.db` (table `data(key TEXT, activity TEXT, datalist TEXT)`).
+* **Chemin Rapide (Fast-Path)** : Si `tl.db` est présent, `get_timeline` exécute une requête SQL directe (`ORDER BY key ASC LIMIT ? OFFSET ?`), décompresse le JSON de `datalist` et classifie l'activité en temps sub-seconde.
+* **Chemin de Secours (Fallback)** : Si `tl.db` est absent, le module agrège dynamiquement les données des 10 modules forensiques.
+
+### 3.5. Calcul Géospatial : Formule de Haversine (`locations.py`)
 Le module de localisation embarque l'algorithme mathématique de Haversine directement en Python pur. Cela permet de requêter des coordonnées dans un rayon précis (`radius_km`) autour d'un point central sans nécessiter l'extension SpatiaLite dans SQLite.
 
-### 3.4. Sécurité & Sandbox SQL (`case.py` & `generic.py`)
+### 3.6. Sécurité & Sandbox SQL (`case.py` & `generic.py`)
 L'outil `run_readonly_sql` applique une stratégie de **défense en profondeur** :
 1. **Contrôle Lexical / Regex** :
    * Requêtes commençant strictement par `SELECT`, `WITH`, `EXPLAIN`, ou certains `PRAGMA`.
@@ -102,10 +115,10 @@ Exemple : Le LLM demande `get_messages(sender="Alice", limit=20)`
 1. **`server.py`** : Réception de l'instruction JSON-RPC via `mcp.tool()`.
 2. **`modules/messages.py`** : 
    * Interroge le `CaseManager` pour identifier les bases SQLite (`sms.db`, `chat.db`) et les fichiers TSV (`WhatsApp_Messages.tsv`, etc.).
-   * Extrait les lignes brutes.
-   * Instancie et normalise chaque ligne en un modèle Pydantic `MessageRecord`.
-   * Déduplique les messages (clé : `timestamp + sender + text + app`).
-   * Applique les filtres mémoires (expéditeur, mot-clé, date).
+   * Streamme les lignes une par une (`iter_sqlite_rows`, `iter_tsv_rows`).
+   * Filtre et normalise chaque ligne en modèle `MessageRecord` à la volée.
+   * Déduplique en mémoire (clé : `timestamp + sender + text + app`).
+   * Stocke uniquement jusqu'à `offset + limit` enregistrements (réservoir borné).
    * Retourne un objet `PaginatedResult[MessageRecord]`.
 3. **`server.py`** : Sérialisation JSON et retour du résultat au LLM.
 
@@ -114,17 +127,20 @@ Exemple : Le LLM demande `get_messages(sender="Alice", limit=20)`
 ## 🧪 5. Architecture de Test & Intégration Continue (CI/CD)
 
 * **Générateur Mock (`tests/fixtures/generate_mock_ileapp.py`)** : Crée à la volée une fausse extraction GrayKey avec toutes les tables/TSV représentatifs pour tester le serveur sans données réelles sensibles.
-* **Pytest Test Suite (`tests/`)** : 33 tests couvrant :
-  * Indexation et chargement de cas.
+* **Pytest Test Suite (`tests/`)** : **51 tests** couvrant :
+  * Indexation, auto-reprise stateless et chargement de cas.
   * Validation et blocage des mutations SQL.
-  * Robustesse de la pagination avec clause `LIMIT` préexistante.
-  * Filtrage métier (dates, rayon Haversine, contacts, bundles).
+  * Découverte dynamique des tables SQLite (`sqlite_master`).
+  * Assainissement anti-NaN/Inf et streaming mémoire.
+  * Accélérateur `tl.db` pour la timeline.
+  * Parsing HTML pour les listes `DeviceInfo.html`.
+  * Filtrage métier (dates, rayon Haversine, contacts, bundles, types).
   * Intégration E2E du serveur FastMCP.
 * **GitHub Actions (`.github/workflows/ci.yml`)** :
   * Matrice de test sur Python `3.10`, `3.11`, `3.12` et `3.13`.
   * Linting strict avec `ruff check .`
   * Formatage du code avec `ruff format --check .`
-  * Type-checking avec `mypy src`.
+  * Type-checking avec `mypy src tests`.
 
 ---
 

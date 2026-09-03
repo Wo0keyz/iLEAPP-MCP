@@ -1,4 +1,6 @@
+import json
 import logging
+from typing import Any
 
 from ileapp_mcp.case import CaseManager
 from ileapp_mcp.models import PaginatedResult, TimelineEvent
@@ -14,6 +16,55 @@ from ileapp_mcp.modules.system_state import get_system_state
 from ileapp_mcp.modules.web import get_web_activity
 
 logger = logging.getLogger(__name__)
+
+
+def _classify_activity(activity: str) -> str:
+    """Classify an iLEAPP artifact activity name into a timeline category."""
+    act_low = activity.lower()
+    if any(
+        k in act_low
+        for k in ["message", "sms", "imessage", "chat", "whatsapp", "telegram", "signal"]
+    ):
+        return "messages"
+    if any(k in act_low for k in ["call", "facetime", "voip"]):
+        return "calls"
+    if any(
+        k in act_low
+        for k in ["safari", "chrome", "firefox", "browser", "bookmark", "download", "web"]
+    ):
+        return "web"
+    if any(k in act_low for k in ["location", "routine", "map", "gps", "significant"]):
+        return "locations"
+    if any(k in act_low for k in ["app", "bundle"]):
+        return "apps"
+    if any(k in act_low for k in ["health", "step", "heart", "workout", "sleep"]):
+        return "health"
+    if any(k in act_low for k in ["note", "memo", "reminder", "calendar", "event"]):
+        return "notes"
+    if any(k in act_low for k in ["photo", "media", "camera", "exif", "image", "video"]):
+        return "photos"
+    if any(k in act_low for k in ["wifi", "bluetooth", "cell", "network", "airdrop"]):
+        return "networks"
+    return "system"
+
+
+def _create_summary_from_data(activity: str, _category: str, data_dict: dict[str, Any]) -> str:
+    """Generate a brief human-readable summary from an iLEAPP timeline record."""
+    # Look for common expressive fields
+    for text_key in ["Message Text", "Text", "Body", "Content", "Search Term", "Query"]:
+        if text_key in data_dict and data_dict[text_key]:
+            val = str(data_dict[text_key]).strip()
+            if len(val) > 70:
+                val = val[:67] + "..."
+            return f'{activity}: "{val}"'
+
+    for name_key in ["Title", "Page Title", "Name", "SSID", "App Name", "Event"]:
+        if name_key in data_dict and data_dict[name_key]:
+            return f"{activity}: {data_dict[name_key]}"
+
+    # Fallback to key items
+    items = [f"{k}={v}" for k, v in list(data_dict.items())[:3] if v]
+    return f"{activity}: {', '.join(items)}" if items else activity
 
 
 def get_timeline(
@@ -34,6 +85,72 @@ def get_timeline(
     cats = [c.lower() for c in (categories or ["all"])]
     include_all = "all" in cats
 
+    # --- FAST PATH: Check if iLEAPP's pre-compiled tl.db exists ---
+    tldb_path = case.get_sqlite_path("tl.db") or case.get_sqlite_path("tl")
+    if tldb_path:
+        try:
+            conn = case.get_sqlite_connection(tldb_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='data'")
+            if cursor.fetchone():
+                where_clauses = []
+                params: list[Any] = []
+                if start_date:
+                    where_clauses.append("key >= ?")
+                    params.append(start_date)
+                if end_date:
+                    where_clauses.append("key <= ?")
+                    params.append(end_date)
+
+                where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+                sql = f"SELECT key, activity, datalist FROM data{where_sql} ORDER BY key ASC"
+
+                tl_events: list[TimelineEvent] = []
+                total_matches = 0
+
+                for row in case.iter_sqlite_rows(tldb_path, sql, tuple(params)):
+                    act = str(row.get("activity", "")).strip()
+                    cat = _classify_activity(act)
+                    if not include_all and cat not in cats and "communications" not in cats:
+                        continue
+                    if "communications" in cats and cat not in ["messages", "calls"]:
+                        continue
+
+                    total_matches += 1
+                    if len(tl_events) < offset + limit:
+                        key_ts = str(row.get("key", "")).strip()
+                        raw_data_str = str(row.get("datalist", "{}"))
+                        try:
+                            parsed_data = json.loads(raw_data_str)
+                        except Exception:
+                            parsed_data = {}
+
+                        summary = _create_summary_from_data(act, cat, parsed_data)
+                        tl_events.append(
+                            TimelineEvent(
+                                timestamp=key_ts,
+                                category=cat,
+                                source_artifact=act,
+                                summary=summary,
+                                details=parsed_data,
+                            )
+                        )
+
+                if total_matches > 0:
+                    page = tl_events[offset : offset + limit]
+                    has_more = (offset + limit) < total_matches
+                    return PaginatedResult[TimelineEvent](
+                        items=page,
+                        total_count=total_matches,
+                        has_more=has_more,
+                        limit=limit,
+                        offset=offset,
+                        next_offset=(offset + limit) if has_more else None,
+                    )
+        except Exception as e:
+            logger.debug("Error using fast tl.db timeline, falling back to multi-module: %s", e)
+
+    # --- FALLBACK PATH: Multi-module unified aggregation ---
     events: list[TimelineEvent] = []
 
     # 1. Messages
@@ -101,50 +218,51 @@ def get_timeline(
         web_res = get_web_activity(
             case, start_date=start_date, end_date=end_date, limit=1000, offset=0
         )
-        for web in web_res.items:
-            if web.timestamp:
-                if web.search_term:
-                    summary = f'{web.browser} Search: "{web.search_term}"'
-                elif web.title:
-                    summary = f"{web.browser} Visited: {web.title} ({web.url})"
+        for w in web_res.items:
+            if w.timestamp:
+                if w.record_type == "search":
+                    summary = f'{w.browser} Search: "{w.search_term or w.title or w.url}"'
+                elif w.record_type == "bookmark":
+                    summary = f"{w.browser} Bookmark: {w.title or w.url}"
                 else:
-                    summary = f"{web.browser} Visited: {web.url}"
+                    summary = f"{w.browser} Visit: {w.title or w.url}"
 
                 events.append(
                     TimelineEvent(
-                        timestamp=web.timestamp,
+                        timestamp=w.timestamp,
                         category="web",
-                        source_artifact=f"{web.browser}_{web.record_type}",
+                        source_artifact=f"{w.browser}_{w.record_type}",
                         summary=summary.strip(),
                         details={
-                            "url": web.url,
-                            "title": web.title,
-                            "search_term": web.search_term,
-                            "record_type": web.record_type,
+                            "url": w.url,
+                            "title": w.title,
+                            "search_term": w.search_term,
+                            "browser": w.browser,
+                            "record_type": w.record_type,
                         },
                     )
                 )
 
-    # 4. Locations
+    # 4. Locations & Movements
     if include_all or "locations" in cats or "geo" in cats:
         loc_res = get_location_history(
             case, start_date=start_date, end_date=end_date, limit=1000, offset=0
         )
         for loc in loc_res.items:
             if loc.timestamp:
-                coords = (
-                    f"[{loc.latitude:.5f}, {loc.longitude:.5f}]"
-                    if loc.latitude and loc.longitude
+                coords_txt = (
+                    f" ({loc.latitude:.4f}, {loc.longitude:.4f})"
+                    if (loc.latitude is not None and loc.longitude is not None)
                     else ""
                 )
-                desc_txt = f" - {loc.description}" if loc.description else ""
-                summary = f"{loc.source_type} Position {coords}{desc_txt}"
+                desc_txt = f": {loc.description}" if loc.description else ""
+                summary = f"{loc.source_type} Position{coords_txt}{desc_txt}"
 
                 events.append(
                     TimelineEvent(
                         timestamp=loc.timestamp,
                         category="locations",
-                        source_artifact=loc.source_type,
+                        source_artifact=loc.source_type.replace(" ", "_"),
                         summary=summary.strip(),
                         details={
                             "latitude": loc.latitude,
@@ -161,7 +279,6 @@ def get_timeline(
         app_res = get_installed_apps(case, limit=500, offset=0)
         for app in app_res.items:
             if app.install_date:
-                # Apply date filter on install date if present
                 if start_date and app.install_date < start_date:
                     continue
                 if end_date and app.install_date > end_date:

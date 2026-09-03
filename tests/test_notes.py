@@ -1,7 +1,8 @@
+from ileapp_mcp.case import CaseManager
 from ileapp_mcp.modules.notes import get_notes_and_memos
 
 
-def test_get_notes(loaded_case):
+def test_get_notes(loaded_case: CaseManager) -> None:
     res = get_notes_and_memos(loaded_case)
     assert res.total_count >= 2
     assert len(res.items) >= 2
@@ -9,7 +10,7 @@ def test_get_notes(loaded_case):
     assert "Grocery List" in titles
 
 
-def test_get_notes_filter(loaded_case):
+def test_get_notes_filter(loaded_case: CaseManager) -> None:
     res = get_notes_and_memos(loaded_case, keyword="roadmap")
     assert res.total_count == 1
     assert res.items[0].title == "Meeting Notes"

@@ -196,7 +196,16 @@ class CaseManager:
             cursor.execute(paginated_query, params)
             rows_raw = cursor.fetchall()
             columns = [d[0] for d in cursor.description] if cursor.description else []
-            rows = [dict(row) for row in rows_raw]
+
+            rows = []
+            for row in rows_raw:
+                sanitized = []
+                for v in row:
+                    if isinstance(v, bytes):
+                        sanitized.append(v.hex()[:256] + ("..." if len(v.hex()) > 256 else ""))
+                    else:
+                        sanitized.append(v)
+                rows.append(dict(zip(columns, sanitized, strict=False)))
 
             if total_count == 0:
                 total_count = len(rows)
@@ -214,7 +223,13 @@ class CaseManager:
             cursor.execute(query, params)
             columns = [d[0] for d in cursor.description] if cursor.description else []
             for row in cursor:
-                yield dict(zip(columns, row, strict=False))
+                sanitized = []
+                for v in row:
+                    if isinstance(v, bytes):
+                        sanitized.append(v.hex()[:256] + ("..." if len(v.hex()) > 256 else ""))
+                    else:
+                        sanitized.append(v)
+                yield dict(zip(columns, sanitized, strict=False))
 
     def read_tsv_records(
         self,
@@ -262,7 +277,7 @@ class CaseManager:
     def iter_tsv_rows(
         self, tsv_path: Path, delimiter: str | None = None
     ) -> Generator[dict[str, str], None, None]:
-        """Yield TSV rows one by one."""
+        """Yield TSV rows one by one with stripped normalized fields."""
         if not tsv_path.exists():
             return
 
@@ -272,13 +287,18 @@ class CaseManager:
         encodings = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
         for enc in encodings:
             try:
-                with open(tsv_path, encoding=enc) as f:
+                with open(tsv_path, encoding=enc, errors="replace") as f:
                     reader = csv.DictReader(f, delimiter=delimiter)
                     for row in reader:
                         if row is not None:
-                            yield dict(row)
+                            yield {
+                                str(k).strip(): str(v).strip()
+                                for k, v in row.items()
+                                if k is not None and v is not None
+                            }
                 return
-            except UnicodeDecodeError:
+            except Exception as e:
+                logger.debug("Failed iter_tsv_rows %s with %s: %s", tsv_path, enc, e)
                 continue
 
     @staticmethod
