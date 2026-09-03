@@ -146,7 +146,7 @@ def get_messages(
     filtered: list[MessageRecord] = []
     total_count = 0
 
-    def process_row(r_dict: dict, db_app: str):
+    def process_row(r_dict: dict[str, Any], db_app: str) -> None:
         nonlocal total_count
 
         # Quick pre-filter if it's clearly not matching app

@@ -112,7 +112,7 @@ def get_call_history(
     filtered: list[CallRecord] = []
     total_count = 0
 
-    def process_row(r_dict: dict, db_app: str):
+    def process_row(r_dict: dict[str, Any], db_app: str) -> None:
         nonlocal total_count
         c = _normalize_call_record(r_dict, default_app=db_app)
 
