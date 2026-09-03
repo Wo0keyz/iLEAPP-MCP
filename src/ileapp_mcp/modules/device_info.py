@@ -38,6 +38,8 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
                     raw_meta[r["Key"].strip()] = r["Value"].strip()
                 elif "Property" in r and "Value" in r:
                     raw_meta[r["Property"].strip()] = r["Value"].strip()
+                elif "Property" in r and "Property Value" in r:
+                    raw_meta[r["Property"].strip()] = r["Property Value"].strip()
                 elif "Parameter" in r and "Value" in r:
                     raw_meta[r["Parameter"].strip()] = r["Value"].strip()
                 else:
@@ -67,6 +69,10 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
                         elif "Property" in row_dict and "Value" in row_dict:
                             raw_meta[str(row_dict["Property"]).strip()] = str(
                                 row_dict["Value"]
+                            ).strip()
+                        elif "Property" in row_dict and "Property Value" in row_dict:
+                            raw_meta[str(row_dict["Property"]).strip()] = str(
+                                row_dict["Property Value"]
                             ).strip()
                         else:
                             for k, v in row_dict.items():
