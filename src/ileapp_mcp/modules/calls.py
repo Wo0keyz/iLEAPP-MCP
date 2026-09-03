@@ -106,8 +106,35 @@ def get_call_history(
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
 
-    all_records: list[CallRecord] = []
     target_hints = ["call_history", "calls", "facetime", "voip", "call"]
+
+    seen = set()
+    filtered: list[CallRecord] = []
+    total_count = 0
+
+    def process_row(r_dict: dict, db_app: str):
+        nonlocal total_count
+        c = _normalize_call_record(r_dict, default_app=db_app)
+
+        if phone_number:
+            p_low = phone_number.lower()
+            num_match = c.phone_number and p_low in c.phone_number.lower()
+            name_match = c.contact_name and p_low in c.contact_name.lower()
+            if not (num_match or name_match):
+                return
+        if call_type and (not c.call_type or call_type.lower() not in c.call_type.lower()):
+            return
+        if start_date and c.timestamp and c.timestamp < start_date:
+            return
+        if end_date and c.timestamp and c.timestamp > end_date:
+            return
+
+        key = (c.timestamp or "", c.phone_number or "", c.call_type or "", c.duration_seconds)
+        if key not in seen:
+            seen.add(key)
+            total_count += 1
+            if len(filtered) < offset + limit:
+                filtered.append(c)
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():
@@ -123,9 +150,7 @@ def get_call_history(
                 for table in tables:
                     default_app = "FaceTime" if "facetime" in stem else "Cellular"
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
-                        all_records.append(
-                            _normalize_call_record(row_dict, default_app=default_app)
-                        )
+                        process_row(row_dict, default_app)
             except Exception as e:
                 logger.debug("Error reading calls from SQLite %s: %s", db_path, e)
 
@@ -136,41 +161,10 @@ def get_call_history(
             default_app = "FaceTime" if "facetime" in stem else "Cellular"
             rows = case.read_tsv_records(tsv_path)
             for r in rows:
-                all_records.append(_normalize_call_record(r, default_app=default_app))
-
-    # De-duplicate
-    seen = set()
-    deduped: list[CallRecord] = []
-    for c in all_records:
-        key = (c.timestamp or "", c.phone_number or "", c.call_type or "", c.duration_seconds)
-        if key not in seen:
-            seen.add(key)
-            deduped.append(c)
-
-    # Apply filters
-    filtered: list[CallRecord] = []
-    for c in deduped:
-        if phone_number:
-            p_low = phone_number.lower()
-            num_match = c.phone_number and p_low in c.phone_number.lower()
-            name_match = c.contact_name and p_low in c.contact_name.lower()
-            if not (num_match or name_match):
-                continue
-
-        if call_type and (not c.call_type or call_type.lower() not in c.call_type.lower()):
-            continue
-
-        if start_date and c.timestamp and c.timestamp < start_date:
-            continue
-
-        if end_date and c.timestamp and c.timestamp > end_date:
-            continue
-
-        filtered.append(c)
+                process_row(r, default_app)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 
-    total_count = len(filtered)
     page = filtered[offset : offset + limit]
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None

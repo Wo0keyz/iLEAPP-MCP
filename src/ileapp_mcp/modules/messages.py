@@ -140,8 +140,44 @@ def get_messages(
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
 
-    all_records: list[MessageRecord] = []
     target_dbs = ["sms", "message", "imessage", "whatsapp", "telegram", "signal", "chat", "viber"]
+
+    seen = set()
+    filtered: list[MessageRecord] = []
+    total_count = 0
+
+    def process_row(r_dict: dict, db_app: str):
+        nonlocal total_count
+
+        # Quick pre-filter if it's clearly not matching app
+        if app.lower() != "all" and app.lower() not in db_app.lower():
+            return
+
+        msg = _normalize_message_record(r_dict, default_app=db_app)
+
+        if sender and (not msg.sender or sender.lower() not in msg.sender.lower()):
+            return
+        if recipient and (not msg.recipient or recipient.lower() not in msg.recipient.lower()):
+            return
+        if keyword:
+            kw = keyword.lower()
+            text_match = msg.message_text and kw in msg.message_text.lower()
+            sender_match = msg.sender and kw in msg.sender.lower()
+            recip_match = msg.recipient and kw in msg.recipient.lower()
+            if not (text_match or sender_match or recip_match):
+                return
+        if start_date and msg.timestamp and msg.timestamp < start_date:
+            return
+        if end_date and msg.timestamp and msg.timestamp > end_date:
+            return
+
+        key = (msg.timestamp or "", msg.sender or "", msg.message_text or "", msg.app)
+        if key not in seen:
+            seen.add(key)
+            total_count += 1
+            # Keep in memory only up to offset + limit to prevent OOM
+            if len(filtered) < offset + limit:
+                filtered.append(msg)
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():
@@ -166,7 +202,7 @@ def get_messages(
                         db_app = "SMS/iMessage"
 
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
-                        all_records.append(_normalize_message_record(row_dict, default_app=db_app))
+                        process_row(row_dict, db_app)
             except Exception as e:
                 logger.debug("Error querying SQLite messages from %s: %s", db_path, e)
 
@@ -184,49 +220,14 @@ def get_messages(
 
             tsv_rows = case.read_tsv_records(tsv_path)
             for row in tsv_rows:
-                all_records.append(_normalize_message_record(row, default_app=default_app))
-
-    # De-duplicate
-    seen = set()
-    deduped_records: list[MessageRecord] = []
-    for m in all_records:
-        key = (m.timestamp or "", m.sender or "", m.message_text or "", m.app)
-        if key not in seen:
-            seen.add(key)
-            deduped_records.append(m)
-
-    # Apply filters
-    filtered: list[MessageRecord] = []
-    for msg in deduped_records:
-        if app.lower() != "all" and app.lower() not in msg.app.lower():
-            continue
-
-        if sender and (not msg.sender or sender.lower() not in msg.sender.lower()):
-            continue
-
-        if recipient and (not msg.recipient or recipient.lower() not in msg.recipient.lower()):
-            continue
-
-        if keyword:
-            kw = keyword.lower()
-            text_match = msg.message_text and kw in msg.message_text.lower()
-            sender_match = msg.sender and kw in msg.sender.lower()
-            recip_match = msg.recipient and kw in msg.recipient.lower()
-            if not (text_match or sender_match or recip_match):
-                continue
-
-        if start_date and msg.timestamp and msg.timestamp < start_date:
-            continue
-
-        if end_date and msg.timestamp and msg.timestamp > end_date:
-            continue
-
-        filtered.append(msg)
+                process_row(row, default_app)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 
-    total_count = len(filtered)
+    # We only stored up to offset + limit records.
     page = filtered[offset : offset + limit]
+
+    # Accurate has_more based on total hits
     has_more = (offset + limit) < total_count
     next_offset = (offset + limit) if has_more else None
 
