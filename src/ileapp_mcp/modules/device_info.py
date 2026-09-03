@@ -22,6 +22,10 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
         "build_info",
         "device_details",
         "sys_info",
+        "ios information",
+        "device data",
+        "subscriber info",
+        "account data",
     ]
 
     for hint in tsv_hints:
@@ -91,12 +95,21 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
                 except Exception as e:
                     logger.debug("Error inspecting HTML %s: %s", html_file, e)
 
-    # Helper to find key case-insensitively
+    # Helper to find key case-insensitively and tolerating spaces/underscores
     def find_val(*keys: str) -> str | None:
-        for target in keys:
-            for k, v in raw_meta.items():
-                if (target.lower() == k.lower() or target.lower() in k.lower()) and v:
-                    return v
+        norm_targets = [re.sub(r"[\s_-]+", "", k.lower()) for k in keys]
+        for raw_k, v in raw_meta.items():
+            if not v:
+                continue
+            raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
+            if raw_norm in norm_targets:
+                return v
+        for raw_k, v in raw_meta.items():
+            if not v:
+                continue
+            raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
+            if any(t in raw_norm for t in norm_targets):
+                return v
         return None
 
     return DeviceInfo(
