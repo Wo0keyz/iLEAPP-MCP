@@ -22,6 +22,10 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
         "build_info",
         "device_details",
         "sys_info",
+        "ios information",
+        "device data",
+        "subscriber info",
+        "account data",
     ]
 
     for hint in tsv_hints:
@@ -34,6 +38,8 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
                     raw_meta[r["Key"].strip()] = r["Value"].strip()
                 elif "Property" in r and "Value" in r:
                     raw_meta[r["Property"].strip()] = r["Value"].strip()
+                elif "Property" in r and "Property Value" in r:
+                    raw_meta[r["Property"].strip()] = r["Property Value"].strip()
                 elif "Parameter" in r and "Value" in r:
                     raw_meta[r["Parameter"].strip()] = r["Value"].strip()
                 else:
@@ -64,6 +70,10 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
                             raw_meta[str(row_dict["Property"]).strip()] = str(
                                 row_dict["Value"]
                             ).strip()
+                        elif "Property" in row_dict and "Property Value" in row_dict:
+                            raw_meta[str(row_dict["Property"]).strip()] = str(
+                                row_dict["Property Value"]
+                            ).strip()
                         else:
                             for k, v in row_dict.items():
                                 if k and v is not None and str(k) not in raw_meta:
@@ -91,12 +101,21 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
                 except Exception as e:
                     logger.debug("Error inspecting HTML %s: %s", html_file, e)
 
-    # Helper to find key case-insensitively
+    # Helper to find key case-insensitively and tolerating spaces/underscores
     def find_val(*keys: str) -> str | None:
-        for target in keys:
-            for k, v in raw_meta.items():
-                if (target.lower() == k.lower() or target.lower() in k.lower()) and v:
-                    return v
+        norm_targets = [re.sub(r"[\s_-]+", "", k.lower()) for k in keys]
+        for raw_k, v in raw_meta.items():
+            if not v:
+                continue
+            raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
+            if raw_norm in norm_targets:
+                return v
+        for raw_k, v in raw_meta.items():
+            if not v:
+                continue
+            raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
+            if any(t in raw_norm for t in norm_targets):
+                return v
         return None
 
     return DeviceInfo(

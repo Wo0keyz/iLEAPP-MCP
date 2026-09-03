@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 
 from ileapp_mcp.case import CaseManager
@@ -7,92 +8,48 @@ from ileapp_mcp.models import AppRecord, PaginatedResult
 logger = logging.getLogger(__name__)
 
 
+def _find_field(keys: list[str], raw: dict[str, Any]) -> Any | None:
+    norm_targets = [re.sub(r"[\s_-]+", "", k.lower()) for k in keys]
+    for raw_k, raw_v in raw.items():
+        if raw_v is None or raw_v == "":
+            continue
+        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
+        if raw_norm in norm_targets:
+            return raw_v
+    for raw_k, raw_v in raw.items():
+        if raw_v is None or raw_v == "":
+            continue
+        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
+        if any(target in raw_norm for target in norm_targets):
+            return raw_v
+    return None
+
+
 def _normalize_app_record(raw: dict[str, Any]) -> AppRecord:
     """Normalize fields across installed apps, metadata, and permissions plugins."""
-    # Find app name
-    name = None
-    for k in ["App Name", "Application Name", "Name", "Display Name", "App"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                name = str(raw_v).strip()
-                break
-        if name:
-            break
+    name = _find_field(["App Name", "Application Name", "Name", "Display Name", "App"], raw)
+    bundle_id = _find_field(
+        ["Bundle ID", "Bundle Identifier", "Identifier", "App ID", "BundleId"], raw
+    )
+    version = _find_field(["Version", "App Version", "Short Version", "Bundle Version"], raw)
+    install_date = _find_field(
+        ["Install Date", "Date Installed", "Purchase Date", "Update Date", "Timestamp", "Date"], raw
+    )
+    developer = _find_field(["Developer", "Vendor", "Author", "Seller", "Developer Name"], raw)
+    path = _find_field(["Path", "App Path", "Container", "Data Container", "Bundle Path"], raw)
 
-    # Find bundle ID
-    bundle_id = None
-    for k in ["Bundle ID", "Bundle Identifier", "Identifier", "App ID", "BundleId"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                bundle_id = str(raw_v).strip()
-                break
-        if bundle_id:
-            break
-
-    # Find version
-    version = None
-    for k in ["Version", "App Version", "Short Version", "Bundle Version"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                version = str(raw_v).strip()
-                break
-        if version:
-            break
-
-    # Find install date
-    install_date = None
-    for k in [
-        "Install Date",
-        "Date Installed",
-        "Purchase Date",
-        "Update Date",
-        "Timestamp",
-        "Date",
-    ]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                install_date = str(raw_v).strip()
-                break
-        if install_date:
-            break
-
-    # Find developer
-    developer = None
-    for k in ["Developer", "Vendor", "Author", "Seller", "Developer Name"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                developer = str(raw_v).strip()
-                break
-        if developer:
-            break
-
-    # Find app path / sandbox
-    path = None
-    for k in ["Path", "App Path", "Container", "Data Container", "Bundle Path"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                path = str(raw_v).strip()
-                break
-        if path:
-            break
-
-    # Find permissions
-    permissions: list[str] = []
-    for k in ["Permissions", "Permission", "Granted Permissions", "Services"]:
-        for raw_k, raw_v in raw.items():
-            if k.lower() == raw_k.lower() and raw_v:
-                v_str = str(raw_v).strip()
-                if v_str and v_str != "None":
-                    parts = [p.strip() for p in v_str.replace(";", ",").split(",") if p.strip()]
-                    permissions.extend(parts)
+    perm_raw = _find_field(["Permissions", "Permission", "Granted Permissions", "Services"], raw)
+    permissions = []
+    if perm_raw and str(perm_raw).strip().lower() != "none":
+        permissions = [p.strip() for p in str(perm_raw).replace(";", ",").split(",") if p.strip()]
 
     return AppRecord(
-        app_name=name,
-        bundle_id=bundle_id,
-        version=version,
-        install_date=install_date,
-        developer=developer,
-        app_path=path,
+        app_name=str(name).strip() if name else None,
+        bundle_id=str(bundle_id).strip() if bundle_id else None,
+        version=str(version).strip() if version else None,
+        install_date=str(install_date).strip() if install_date else None,
+        developer=str(developer).strip() if developer else None,
+        app_path=str(path).strip() if path else None,
         permissions=permissions,
         raw_data=raw,
     )
@@ -113,7 +70,14 @@ def get_installed_apps(
     offset = max(0, offset)
 
     all_records: list[AppRecord] = []
-    target_hints = ["installed_app", "applications", "apps", "app_permissions", "app_guid"]
+    target_hints = [
+        "installed_app",
+        "applications",
+        "apps",
+        "app_permissions",
+        "app_guid",
+        "installed apps",
+    ]
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():
