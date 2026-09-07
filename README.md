@@ -146,7 +146,7 @@ mypy src
 ```
 
 ### 🛡️ Production & Forensics Hardening
-* **Zero-RAM Reservoir Streaming**: Evaluates records and filters on-the-fly, strictly capping memory consumption at `offset + limit` items to eliminate Out-Of-Memory (OOM) risks even with massive 10GB+ databases (like `sms.db` or `locationd` caches).
+* **In-Memory Chronological Sorting**: Evaluates records and filters on-the-fly, loading matched items into memory for strict chronological sorting. Ensures deterministic pagination without duplicating data, utilizing optimized Python `list.sort()` which easily handles 100,000+ forensic records in ~20MB RAM.
 * **Stateless Client Resilience**: Automatically persists the active case path to `.ileapp_mcp_last_case` in the system temporary directory so that client processes (like Charm Crush in `stdio` mode) seamlessly resume case context across restarts.
 * **RFC 8259 JSON Sanitization**: Ensures all coordinates and floats are bounded and non-NaN/non-Inf, and SQLite BLOB objects are automatically sanitized into truncated hexadecimal strings.
 * **Timeline Accelerator**: Utilizes iLEAPP's pre-compiled `_Timeline/tl.db` database directly for instant sub-second chronological timeline queries.
