@@ -128,6 +128,12 @@ def get_installed_apps(
 
     def process_row(r_dict: dict[str, Any]) -> None:
         rec = _normalize_app_record(r_dict)
+
+        if rec.bundle_id and str(rec.bundle_id).isdigit():
+            rec.bundle_id = None
+        if rec.app_name and str(rec.app_name).isdigit():
+            rec.app_name = None
+
         if not rec.bundle_id and not rec.app_name:
             return
 

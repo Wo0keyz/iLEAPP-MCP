@@ -139,17 +139,16 @@ def get_network_connections(
         if key not in seen:
             seen.add(key)
             total_count += 1
-            if len(filtered) < offset + limit:
-                filtered.append(
-                    NetworkRecord(
-                        timestamp=ts_str,
-                        connection_type=ctype,
-                        ssid_or_name=name_str,
-                        bssid_or_mac=mac_str,
-                        duration_seconds=dur_val,
-                        raw_data=row,
-                    )
+            filtered.append(
+                NetworkRecord(
+                    timestamp=ts_str,
+                    connection_type=ctype,
+                    ssid_or_name=name_str,
+                    bssid_or_mac=mac_str,
+                    duration_seconds=dur_val,
+                    raw_data=row,
                 )
+            )
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():

@@ -53,14 +53,13 @@ def global_keyword_search(
 
                 if match_found:
                     total_count += 1
-                    if len(filtered) < offset + limit:
-                        filtered.append(
-                            SearchHit(
-                                artifact_name=artifact_name,
-                                matched_text=matched_text.strip(),
-                                row_data=row,
-                            )
+                    filtered.append(
+                        SearchHit(
+                            artifact_name=artifact_name,
+                            matched_text=matched_text.strip(),
+                            row_data=row,
                         )
+                    )
         except Exception:
             pass
 

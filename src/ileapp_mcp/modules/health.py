@@ -134,17 +134,16 @@ def get_health_data(
         if key not in seen:
             seen.add(key)
             total_count += 1
-            if len(filtered) < offset + limit:
-                filtered.append(
-                    HealthRecord(
-                        timestamp=ts_str,
-                        metric_type=mtype_str,
-                        value=val_str,
-                        unit=unit_str,
-                        source_device=source_str,
-                        raw_data=row,
-                    )
+            filtered.append(
+                HealthRecord(
+                    timestamp=ts_str,
+                    metric_type=mtype_str,
+                    value=val_str,
+                    unit=unit_str,
+                    source_device=source_str,
+                    raw_data=row,
                 )
+            )
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():

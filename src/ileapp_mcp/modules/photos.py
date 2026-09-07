@@ -125,21 +125,20 @@ def get_photos_metadata(
         if key not in seen:
             seen.add(key)
             total_count += 1
-            if len(filtered) < offset + limit:
-                filtered.append(
-                    PhotoRecord(
-                        timestamp=ts_str,
-                        file_name=fname_str,
-                        media_type=mtype_str,
-                        latitude=lat,
-                        longitude=lon,
-                        camera_model=cam_str,
-                        is_deleted=is_del,
-                        album_name=album_str,
-                        file_path=fpath_str,
-                        raw_data=row,
-                    )
+            filtered.append(
+                PhotoRecord(
+                    timestamp=ts_str,
+                    file_name=fname_str,
+                    media_type=mtype_str,
+                    latitude=lat,
+                    longitude=lon,
+                    camera_model=cam_str,
+                    is_deleted=is_del,
+                    album_name=album_str,
+                    file_path=fpath_str,
+                    raw_data=row,
                 )
+            )
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():
