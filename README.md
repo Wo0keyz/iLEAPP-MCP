@@ -108,7 +108,7 @@ Add to your Crush MCP configuration file (`~/.config/crush/crush.json`):
 | `load_case` | Load or switch to an iLEAPP report directory dynamically | `path` |
 | `get_case_info` | Get case status, loaded databases, and artifact statistics | *None* |
 | `get_device_info` | Get device hardware, iOS version, serial, IMEI, timezone | *None* |
-| `get_messages` | Query SMS, iMessage, WhatsApp, Telegram, Signal messages | `sender`, `recipient`, `keyword`, `start_date`, `end_date`, `app`, `limit`, `offset` |
+| `get_messages` | Query SMS, iMessage, WhatsApp, Telegram, Signal, Session, Zangi messages | `sender`, `recipient`, `keyword`, `start_date`, `end_date`, `app`, `limit`, `offset` |
 | `get_call_history` | Query call history with duration and type (Cellular, FaceTime) | `phone_number`, `call_type`, `start_date`, `end_date`, `limit`, `offset` |
 | `get_location_history`| Query GPS and Significant Locations with radius search | `latitude`, `longitude`, `radius_km`, `start_date`, `end_date`, `limit`, `offset` |
 | `get_web_activity` | Query browsing, search queries, downloads (Safari, Chrome, Firefox, Tor) | `domain`, `search_query`, `activity_type`, `start_date`, `end_date`, `limit`, `offset` |
@@ -119,6 +119,10 @@ Add to your Crush MCP configuration file (`~/.config/crush/crush.json`):
 | `get_network_connections` | Query Wi-Fi history, Bluetooth pairings, Cell Towers, AirDrop | `connection_type`, `ssid_or_name`, `start_date`, `end_date`, `limit`, `offset` |
 | `get_system_state` | Query power events, battery levels, lock cycles, screen state | `event_type`, `start_date`, `end_date`, `limit`, `offset` |
 | `get_timeline` | Unified chronological stream across all sources (Fast-path `tl.db`) | `start_date`, `end_date`, `categories`, `limit`, `offset` |
+| `global_keyword_search` | 🆕 Perform a global keyword search across all extracted TSV/CSV artifacts | `keyword`, `limit`, `offset` |
+| `get_file_attachment` | 🆕 Search and retrieve a file/attachment with SHA256 hash and preview | `file_name` |
+| `decode_plist_or_protobuf`| 🆕 Decode a binary plist (bplist) or XML plist file | `relative_path` |
+| `get_cloud_identities`| 🆕 Aggregate Apple IDs, MDM accounts, Phone numbers, Wi-Fi, Bluetooth | *None* |
 | `list_available_artifacts` | List all discovered SQLite tables and TSV files | *None* |
 | `get_raw_artifact_data` | Query raw tabular data from any specific artifact with filters | `artifact_name`, `filters`, `limit`, `offset` |
 | `run_readonly_sql` | Execute safe, read-only SQL queries on SQLite databases | `query`, `db_name`, `max_rows` |

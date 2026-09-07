@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rapport Technique & d'Architecture : iLEAPP-MCP</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #18bc9c;
+            --bg-color: #f9f9f9;
+            --text-color: #333;
+            --border-color: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 40px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        /* Print formatting */
+        @media print {
+            body { background: #fff; }
+            .container { box-shadow: none; max-width: 100%; padding: 0; }
+            h1, h2 { page-break-after: avoid; }
+            table, img, pre { page-break-inside: avoid; }
+            h1.cover-title { margin-top: 30vh; font-size: 3em; }
+            .page-break { page-break-before: always; }
+            .no-print { display: none; }
+        }
+
+        h1, h2, h3, h4 { color: var(--primary-color); }
+        h1 { border-bottom: 3px solid var(--secondary-color); padding-bottom: 10px; }
+        h2 { border-bottom: 1px solid var(--border-color); padding-bottom: 5px; margin-top: 2em; }
+        
+        .cover-page {
+            text-align: center;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .cover-title { font-size: 2.5em; margin-bottom: 0.2em; border: none; }
+        .cover-subtitle { font-size: 1.5em; color: #7f8c8d; margin-bottom: 2em; }
+        
+        pre {
+            background-color: #2d2d2d;
+            color: #ccc;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+        }
+        
+        code {
+            background-color: #f1f2f6;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: 'Courier New', Courier, monospace;
+            color: #c0392b;
+        }
+        pre code { background-color: transparent; color: inherit; padding: 0; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        table, th, td { border: 1px solid var(--border-color); }
+        th, td { padding: 12px; text-align: left; }
+        th { background-color: var(--primary-color); color: #fff; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+
+        .alert {
+            padding: 15px;
+            background-color: #e8f8f5;
+            border-left: 5px solid var(--secondary-color);
+            margin: 20px 0;
+        }
+        .alert-warning {
+            background-color: #fdf2e9;
+            border-left: 5px solid #e67e22;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- PAGE DE GARDE -->
+    <div class="cover-page">
+        <h1 class="cover-title">iLEAPP-MCP</h1>
+        <div class="cover-subtitle">Rapport Technique, Sécurité & Architecture Intégrale</div>
+        <p><strong>Serveur Model Context Protocol pour l'Automatisation Forensique iOS</strong></p>
+    </div>
+
+    <div class="page-break"></div>
+
+    <!-- INTRODUCTION -->
+    <h1>1. Introduction et Contexte</h1>
+    <p>Le projet <strong>iLEAPP-MCP</strong> vise à combler le fossé entre l'intelligence artificielle (les LLMs) et l'analyse numérique légale (Digital Forensics) de systèmes iOS. L'outil iLEAPP (iOS Logs, Events, And Plists Parser) génère des extractions riches et complexes (Bases SQLite, fichiers TSV). Fournir ces gigaoctets de données brutes directement à une IA est techniquement impossible en raison des limitations de la fenêtre de contexte (Token limits).</p>
+    
+    <p>La solution réside dans le <strong>Model Context Protocol (MCP)</strong>, un standard open-source. Le serveur MCP agit comme une API locale sécurisée qui expose des "Outils" (Tools) au modèle d'IA. Ainsi, l'IA n'ingère plus la donnée en masse, mais interroge dynamiquement le système d'investigation en fonction de son raisonnement.</p>
+
+    <!-- ARCHITECTURE -->
+    <h2>2. Architecture Interne du Serveur</h2>
+    <p>Le serveur est architecturé autour de trois piliers principaux garantissant performance et découplage :</p>
+    
+    <h3>2.1. Le gestionnaire FastMCP (<code>server.py</code>)</h3>
+    <p>Il assure la communication JSON-RPC via les flux standard (stdio) ou SSE avec l'environnement client (Claude Desktop, Cursor). Il se contente d'enregistrer les fonctions décorées par <code>@mcp.tool()</code> et ne contient aucune logique métier d'analyse.</p>
+
+    <h3>2.2. Le Cœur du Réacteur : <code>CaseManager</code> (<code>case.py</code>)</h3>
+    <p>C'est la classe Singleton qui gère l'état et l'accès aux extractions :</p>
+    <ul>
+        <li><strong>Indexation intelligente :</strong> À l'appel de <code>load_case()</code>, il détecte automatiquement la racine du rapport iLEAPP et indexe récursivement les fichiers pertinents dans des dictionnaires mémoires (Optimisation LFI et Path Traversal).</li>
+        <li><strong>Pool de connexions :</strong> Il maintient un cache thread-safe des connexions SQLite.</li>
+        <li><strong>Estimateur de Pagination :</strong> Il intercepte les requêtes SQL, calcule le <code>COUNT(*)</code> pour l'IA, et injecte automatiquement les clauses <code>LIMIT</code> et <code>OFFSET</code>.</li>
+        <li><strong>Parseur TSV Multi-encodage :</strong> Résilience de lecture des CSV/TSV via un essai successif d'encodages (<code>utf-8-sig</code>, <code>utf-8</code>, <code>latin-1</code>, <code>cp1252</code>).</li>
+    </ul>
+
+    <h3>2.3. Les Modules Métiers (<code>modules/</code>)</h3>
+    <p>Chaque domaine forensique dispose de son module spécialisé, interrogeant le <code>CaseManager</code> et renvoyant des objets Pydantic fortement typés :</p>
+    <ul>
+        <li><code>messages.py</code> : Agrégation unifiée SMS, iMessage, WhatsApp, Telegram, Signal.</li>
+        <li><code>locations.py</code> : Analyse des positions, Significant Locations, Routine cache.</li>
+        <li><code>timeline.py</code> : Génération d'une frise chronologique unifiée multi-sources.</li>
+        <li><code>apps.py</code> & <code>web.py</code> : Applications installées, permissions et navigation Safari/Chrome.</li>
+    </ul>
+
+    <div class="page-break"></div>
+
+    <!-- SECURITE & FORENSIC SOUNDNESS -->
+    <h1>3. Sécurité & Intégrité Forensique</h1>
+    <p>Dans un contexte pénal ou d'incident response, la règle d'or est l'immuabilité de la preuve. Un LLM, sujet aux hallucinations ou aux prompt injections, ne doit <strong>jamais</strong> pouvoir altérer l'extraction.</p>
+
+    <h3>3.1. Sécurité des Bases de Données (Anti-Mutation)</h3>
+    <div class="alert">
+        <strong>Défense en profondeur (Defense-in-depth) :</strong>
+        <ol>
+            <li><strong>Moteur SQLite (C Level) :</strong> Toutes les connexions sont initiées via URI avec l'argument <code>?mode=ro</code>. Il s'agit d'une protection au niveau du système de fichiers virtuel SQLite : l'écriture est physiquement rejetée.</li>
+            <li><strong>Filtre Lexical Regex :</strong> L'outil d'exécution SQL libre (<code>run_readonly_sql</code>) impose une liste blanche de verbes (<code>SELECT</code>, <code>WITH</code>) et rejette fermement les multiples requêtes et mots clés comme <code>DROP</code>, <code>UPDATE</code>, ou <code>PRAGMA WRITABLE_SCHEMA</code>.</li>
+            <li><strong>Assainissement dynamique :</strong> Les noms de tables fournis par l'IA sont purgés des backticks et quotes pour éviter les évasions syntaxiques (SQLi).</li>
+        </ol>
+    </div>
+
+    <h3>3.2. Protection Anti-Déni de Service (DoS) et Mémoire</h3>
+    <ul>
+        <li><strong>Explosion de contexte LLM :</strong> Les limites (<code>limit</code>) envoyées par l'IA sont écrêtées par le serveur (ex: max 250). Une réponse massive paralyserait l'API du modèle d'IA. Le serveur renvoie toujours un objet paginé avec les métadonnées <code>has_more</code> et <code>total_count</code>.</li>
+        <li><strong>DoS par indexation (LFI) :</strong> Si une IA malveillante demandait d'indexer la racine du système (<code>C:\</code>), la recherche récursive <code>rglob("*")</code> saturerait la mémoire. Le <code>CaseManager</code> est verrouillé par un compteur coupe-circuit (max 50 000 fichiers scannés).</li>
+    </ul>
+
+    <!-- ALGORITHMES -->
+    <h2>4. Innovations Algorithmiques Métiers</h2>
+    <h3>4.1. Normalisation Tolérante aux Fautes : <code>_find_field</code></h3>
+    <p>iLEAPP est composé de centaines de plugins communautaires. La convention de nommage des colonnes n'existe pas (ex: "Message Date", "message_date", "Date"). La fonction <code>_find_field</code> effectue un matching insensible à la casse et aux séparateurs (espaces, underscores, tirets) pour extraire la donnée indépendamment du parseur sous-jacent.</p>
+
+    <h3>4.2. Moteur Géospatial Local (Haversine)</h3>
+    <p>SQLite natif ne dispose pas de capacités géospatiales sans l'extension compilée SpatiaLite. Pour permettre à l'IA de faire des requêtes du type <em>"Qui était dans un rayon de 5km de ces coordonnées ?"</em>, la <strong>formule mathématique de Haversine</strong> a été implémentée en Python pur dans <code>locations.py</code>. Les coordonnées sont filtrées en mémoire post-requête SQL de manière transparente.</p>
+
+    <div class="page-break"></div>
+
+    <!-- DEPLOIEMENT -->
+    <h1>5. Installation et Configuration</h1>
+    
+    <h3>5.1. Déploiement Local</h3>
+    <pre><code># Cloner le dépôt et se placer à la racine
+git clone https://github.com/Wo0keyz/iLEAPP-MCP.git
+cd iLEAPP-MCP
+
+# Installer le package et ses dépendances (Python 3.10+)
+pip install .</code></pre>
+    <p>L'installation rend la commande système <code>ileapp-mcp</code> disponible globalement.</p>
+
+    <h3>5.2. Connexion à Claude Desktop / Cursor</h3>
+    <p>Éditez le fichier de configuration de votre client IA (ex: <code>claude_desktop_config.json</code>) pour déclarer le serveur MCP :</p>
+    <pre><code>{
+  "mcpServers": {
+    "ileapp-mcp": {
+      "command": "ileapp-mcp",
+      "args": []
+    }
+  }
+}</code></pre>
+
+    <!-- UTILISATION -->
+    <h2>6. Utilisation & Personas d'Investigation (Agents)</h2>
+    <p>Pour exploiter toute la puissance du serveur, des fichiers de configuration système (System Prompts) sont fournis dans le dossier <code>agents/</code> du projet.</p>
+    
+    <ul>
+        <li><code>analyste_forensic.md</code> : Configure le modèle pour agir comme un technicien strict, croisant la timeline, justifiant chaque allégation par l'horodatage et la source exacte sans hallucination.</li>
+        <li><code>profileur_comportemental.md</code> : Demande au modèle d'utiliser des algorithmes de reconnaissance de patterns (trous de sommeil, géolocalisations nocturnes récurrentes pour le domicile, pics de messagerie tardifs pour l'Inner Circle social).</li>
+    </ul>
+
+    <div class="alert alert-warning">
+        <strong>Exemple d'amorce opérationnelle :</strong><br>
+        <i>"J'ai configuré tes accès MCP. Charge le dossier situé à <code>C:\CTF_GrayKey</code>. Suis ta SOP d'analyste et sors-moi une timeline des événements 2h avant et après la dernière position connue de l'appareil."</i>
+    </div>
+
+    <!-- CONCLUSION -->
+    <h1>7. Conclusion & Limites</h1>
+    <p>Le serveur <strong>iLEAPP-MCP</strong> révolutionne la phase de triage et d'analyse comportementale d'une extraction iOS. En bridant structurellement et conceptuellement le LLM via un protocole d'outils stricts et paginés, le risque d'hallucination disparait au profit d'une requête analytique extrêmement rapide et documentée.</p>
+    
+    <p><strong>Limites connues (Angles Morts) :</strong></p>
+    <ul>
+        <li><strong>Analyse Visuelle (Computer Vision) :</strong> Le texte ne peut analyser les snapshots de l'interface utilisateur (Fichiers <code>.ktx</code> de cache d'applications).</li>
+        <li><strong>Dépendance iLEAPP :</strong> Le serveur ne peut requêter que ce que les plugins iLEAPP ont parsé. L'exploitation d'artefacts très obscurs ou non supportés nécessite encore le recours au Full File System brut ou à une suite propriétaire complète (ex: Magnet Axiom, Cellebrite Physical Analyzer).</li>
+    </ul>
+
+</div>
+
+</body>
+</html>

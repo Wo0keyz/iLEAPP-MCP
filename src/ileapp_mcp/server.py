@@ -32,6 +32,9 @@ from ileapp_mcp.models import (
 from ileapp_mcp.modules.apps import get_installed_apps as _get_installed_apps
 from ileapp_mcp.modules.calls import get_call_history as _get_call_history
 from ileapp_mcp.modules.device_info import get_device_info as _get_device_info
+from ileapp_mcp.modules.files import FileInfo
+from ileapp_mcp.modules.files import decode_plist as _decode_plist
+from ileapp_mcp.modules.files import get_file_attachment as _get_file_attachment
 from ileapp_mcp.modules.generic import (
     get_raw_artifact_data as _get_raw_artifact_data,
 )
@@ -42,11 +45,15 @@ from ileapp_mcp.modules.generic import (
     run_readonly_sql as _run_readonly_sql,
 )
 from ileapp_mcp.modules.health import get_health_data as _get_health_data
+from ileapp_mcp.modules.identities import CloudIdentityProfile
+from ileapp_mcp.modules.identities import get_cloud_identities as _get_cloud_identities
 from ileapp_mcp.modules.locations import get_location_history as _get_location_history
 from ileapp_mcp.modules.messages import get_messages as _get_messages
 from ileapp_mcp.modules.networks import get_network_connections as _get_network_connections
 from ileapp_mcp.modules.notes import get_notes_and_memos as _get_notes_and_memos
 from ileapp_mcp.modules.photos import get_photos_metadata as _get_photos_metadata
+from ileapp_mcp.modules.search import SearchHit
+from ileapp_mcp.modules.search import global_keyword_search as _global_keyword_search
 from ileapp_mcp.modules.system_state import get_system_state as _get_system_state
 from ileapp_mcp.modules.timeline import get_timeline as _get_timeline
 from ileapp_mcp.modules.web import get_web_activity as _get_web_activity
@@ -463,4 +470,50 @@ def get_system_state(
         end_date=end_date,
         limit=limit,
         offset=offset,
+    )
+
+
+@mcp.tool()
+def global_keyword_search(
+    keyword: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> PaginatedResult[SearchHit]:
+    """Perform a global keyword search across all extracted iLEAPP TSV/CSV artifacts. Excellent for pivoting on a codename or email."""
+    return _global_keyword_search(
+        case=case_manager,
+        keyword=keyword,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@mcp.tool()
+def get_file_attachment(
+    file_name: str,
+) -> FileInfo | None:
+    """Search for a specific file/attachment within the extracted iLEAPP directory by its name (e.g. 'Astronautica_Sanitized.pdf' or 'data.py').
+    Returns file absolute path, SHA256 hash, size, and a preview of the content if it is text."""
+    return _get_file_attachment(
+        case=case_manager,
+        file_name=file_name,
+    )
+
+
+@mcp.tool()
+def decode_plist_or_protobuf(
+    relative_path: str,
+) -> dict[str, Any] | str:
+    """Decode a binary plist (bplist) or standard XML plist file directly from the extraction directory. Pass the filename or relative path."""
+    return _decode_plist(
+        case=case_manager,
+        relative_path=relative_path,
+    )
+
+
+@mcp.tool()
+def get_cloud_identities() -> CloudIdentityProfile:
+    """Aggregate identity and network profiles across the device. Returns Apple IDs, MDM accounts, Phone numbers, Wi-Fi SSIDs, and Bluetooth devices."""
+    return _get_cloud_identities(
+        case=case_manager,
     )
