@@ -140,7 +140,18 @@ def get_messages(
     limit = max(1, min(limit, 250))
     offset = max(0, offset)
 
-    target_dbs = ["sms", "message", "imessage", "whatsapp", "telegram", "signal", "chat", "viber"]
+    target_dbs = [
+        "sms",
+        "message",
+        "imessage",
+        "whatsapp",
+        "telegram",
+        "signal",
+        "chat",
+        "viber",
+        "zangidb",
+        "session",
+    ]
 
     seen = set()
     filtered: list[MessageRecord] = []
@@ -198,6 +209,10 @@ def get_messages(
                         db_app = "Telegram"
                     elif "signal" in stem:
                         db_app = "Signal"
+                    elif "session" in stem:
+                        db_app = "Session"
+                    elif "zangi" in stem:
+                        db_app = "Zangi"
                     elif "sms" in stem:
                         db_app = "SMS/iMessage"
 
@@ -215,6 +230,12 @@ def get_messages(
                 default_app = "WhatsApp"
             elif "telegram" in stem:
                 default_app = "Telegram"
+            elif "signal" in stem:
+                default_app = "Signal"
+            elif "session" in stem:
+                default_app = "Session"
+            elif "zangi" in stem:
+                default_app = "Zangi"
             elif "sms" in stem:
                 default_app = "SMS/iMessage"
 
