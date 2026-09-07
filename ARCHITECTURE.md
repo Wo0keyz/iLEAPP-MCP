@@ -72,7 +72,7 @@ Le **cœur d'accès aux données**. Il gère :
 * **Protection DoS** : Limite l'exploration à 50 000 fichiers pour éviter le blocage lors d'un scan de dossier racine.
 * **Pool de Connexions SQLite Thread-Safe** : Caches de connexions par base, configurées avec `check_same_thread=False` et `row_factory = sqlite3.Row`.
 * **Générateurs à Empreinte Mémoire Nulle (Lazy-Yielding)** : Fournit `iter_sqlite_rows` et `iter_tsv_rows` qui streamment les lignes au lieu de charger les 100 000 entrées d'une table avec `fetchall()`.
-* **Réservoir Borné en Mémoire ($O(1)$ RAM)** : Dans chaque module, les enregistrements sont évalués, filtrés et dédupliqués à la volée. La mémoire vive allouée est strictement bornée à `offset + limit` éléments, garantissant l'absence totale d'Out-Of-Memory (OOM) même sur des bases géantes de 10 Go+.
+* **Streaming & Tri Chronologique Global** : Dans chaque module, les enregistrements sont évalués, filtrés et dédupliqués à la volée. L'ensemble des résultats correspondants est trié en mémoire (`list.sort()`) pour garantir un ordre chronologique déterministe lors de la pagination, consommant de façon optimale la RAM (~20Mo pour 100 000 records).
 * **Sérialisation Sûre RFC 8259** : Les données binaires (BLOBs SQLite) sont automatiquement tronquées et converties en chaînes hexadécimales lisibles. Les coordonnées géographiques et valeurs numériques sont validées contre `NaN` et `Infinity` pour ne jamais corrompre le parseur JSON du client MCP.
 * **Résilience aux Clients Stateless** : Le chemin de l'extraction active est sauvegardé dans `.ileapp_mcp_last_case` (répertoire temporaire système), permettant aux clients MCP qui redémarrent le processus en mode stdio (comme Charm Crush) de conserver l'état du cas en toute transparence.
 * **Estimateur de Pagination SQL** : `query_sqlite` intercepte les requêtes pour calculer le `COUNT(*)` sans double-pagination et injecte `LIMIT/OFFSET` de façon transparente.
@@ -118,8 +118,8 @@ Exemple : Le LLM demande `get_messages(sender="Alice", limit=20)`
    * Streamme les lignes une par une (`iter_sqlite_rows`, `iter_tsv_rows`).
    * Filtre et normalise chaque ligne en modèle `MessageRecord` à la volée.
    * Déduplique en mémoire (clé : `timestamp + sender + text + app`).
-   * Stocke uniquement jusqu'à `offset + limit` enregistrements (réservoir borné).
-   * Retourne un objet `PaginatedResult[MessageRecord]`.
+   * Trie chronologiquement l'ensemble des résultats.
+   * Retourne la page demandée (`offset` à `offset + limit`) via un objet `PaginatedResult[MessageRecord]`.
 3. **`server.py`** : Sérialisation JSON et retour du résultat au LLM.
 
 ---
@@ -140,7 +140,8 @@ Exemple : Le LLM demande `get_messages(sender="Alice", limit=20)`
   * Matrice de test sur Python `3.10`, `3.11`, `3.12` et `3.13`.
   * Linting strict avec `ruff check .`
   * Formatage du code avec `ruff format --check .`
-  * Type-checking avec `mypy src tests`.
+  * Type-checking statique avec `mypy src tests`.
+  * **Analyses de Sécurité (SAST & DAST)** : Scan des vulnérabilités de dépendances avec `pip-audit` et analyse de sécurité statique du code Python avec `bandit` (protection contre les injections SQL, path traversals).
 
 ---
 
