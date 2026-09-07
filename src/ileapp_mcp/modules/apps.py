@@ -134,6 +134,9 @@ def get_installed_apps(
         if rec.app_name and str(rec.app_name).isdigit():
             rec.app_name = None
 
+        if not rec.app_name and rec.bundle_id and "." in rec.bundle_id:
+            rec.app_name = rec.bundle_id.split(".")[-1].capitalize()
+
         if not rec.bundle_id and not rec.app_name:
             return
 
