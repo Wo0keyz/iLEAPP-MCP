@@ -110,17 +110,16 @@ def get_notes_and_memos(
         if key not in seen:
             seen.add(key)
             total_count += 1
-            if len(filtered) < offset + limit:
-                filtered.append(
-                    NoteRecord(
-                        timestamp=ts_str,
-                        note_type=ntype,
-                        title=title_str,
-                        content=content_str,
-                        file_path=fpath_str,
-                        raw_data=row,
-                    )
+            filtered.append(
+                NoteRecord(
+                    timestamp=ts_str,
+                    note_type=ntype,
+                    title=title_str,
+                    content=content_str,
+                    file_path=fpath_str,
+                    raw_data=row,
                 )
+            )
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():

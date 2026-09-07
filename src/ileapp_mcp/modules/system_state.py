@@ -121,15 +121,14 @@ def get_system_state(
         if key not in seen:
             seen.add(key)
             total_count += 1
-            if len(filtered) < offset + limit:
-                filtered.append(
-                    SystemStateRecord(
-                        timestamp=ts_str,
-                        event_type=etype,
-                        value=val_str,
-                        raw_data=row,
-                    )
+            filtered.append(
+                SystemStateRecord(
+                    timestamp=ts_str,
+                    event_type=etype,
+                    value=val_str,
+                    raw_data=row,
                 )
+            )
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():

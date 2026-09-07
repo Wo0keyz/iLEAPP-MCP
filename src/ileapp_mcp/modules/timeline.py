@@ -23,7 +23,17 @@ def _classify_activity(activity: str) -> str:
     act_low = activity.lower()
     if any(
         k in act_low
-        for k in ["message", "sms", "imessage", "chat", "whatsapp", "telegram", "signal"]
+        for k in [
+            "message",
+            "sms",
+            "imessage",
+            "chat",
+            "whatsapp",
+            "telegram",
+            "signal -",
+            "session -",
+            "zangi",
+        ]
     ):
         return "messages"
     if any(k in act_low for k in ["call", "facetime", "voip"]):

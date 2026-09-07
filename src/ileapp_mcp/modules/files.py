@@ -77,6 +77,16 @@ def get_file_attachment(case: CaseManager, file_name: str) -> FileInfo | None:
     return None
 
 
+def _json_safe(obj: Any) -> Any:
+    if isinstance(obj, bytes):
+        return obj.hex()
+    elif isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 def decode_plist(case: CaseManager, relative_path: str) -> dict[str, Any] | str:
     """Decode a binary plist (bplist) or standard XML plist file."""
     if not case.is_loaded or not case.case_path:
@@ -97,8 +107,9 @@ def decode_plist(case: CaseManager, relative_path: str) -> dict[str, Any] | str:
     with open(full_path, "rb") as f:
         try:
             val = plistlib.load(f)
-            if isinstance(val, dict):
-                return val
-            return {"parsed": val}
+            safe_val = _json_safe(val)
+            if isinstance(safe_val, dict):
+                return safe_val
+            return {"parsed": safe_val}
         except Exception as e:
             return f"Failed to decode plist: {str(e)}"

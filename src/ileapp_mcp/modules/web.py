@@ -168,8 +168,7 @@ def get_web_activity(
         if key not in seen:
             seen.add(key)
             total_count += 1
-            if len(filtered) < offset + limit:
-                filtered.append(rec)
+            filtered.append(rec)
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():

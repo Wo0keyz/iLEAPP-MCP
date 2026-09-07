@@ -187,13 +187,35 @@ def get_messages(
             seen.add(key)
             total_count += 1
             # Keep in memory only up to offset + limit to prevent OOM
-            if len(filtered) < offset + limit:
-                filtered.append(msg)
+            filtered.append(msg)
 
-    # 1. Search SQLite databases
+    # 1. Search TSV/CSV files (Priority because they are properly joined by iLEAPP plugins)
+    for tsv_path in case.get_all_tsv_files():
+        stem = tsv_path.stem.lower()
+        if any(t in stem for t in target_dbs):
+            default_app = "iMessage"
+            if "whatsapp" in stem:
+                default_app = "WhatsApp"
+            elif "telegram" in stem:
+                default_app = "Telegram"
+            elif "signal" in stem:
+                default_app = "Signal"
+            elif "session" in stem:
+                default_app = "Session"
+            elif "zangi" in stem:
+                default_app = "Zangi"
+            elif "sms" in stem:
+                default_app = "SMS/iMessage"
+
+            tsv_rows = case.read_tsv_records(tsv_path)
+            for row in tsv_rows:
+                process_row(row, default_app)
+
+    # 2. Search SQLite databases (Fallback for unsupported apps, exclude complex CoreData databases)
+    sqlite_dbs = ["sms", "message", "imessage", "whatsapp", "telegram", "chat", "viber"]
     for db_path in case.get_all_sqlite_dbs():
         stem = db_path.stem.lower()
-        if any(t in stem for t in target_dbs):
+        if any(t in stem for t in sqlite_dbs):
             try:
                 conn = case.get_sqlite_connection(db_path)
                 cursor = conn.cursor()
@@ -220,28 +242,6 @@ def get_messages(
                         process_row(row_dict, db_app)
             except Exception as e:
                 logger.debug("Error querying SQLite messages from %s: %s", db_path, e)
-
-    # 2. Search TSV/CSV files
-    for tsv_path in case.get_all_tsv_files():
-        stem = tsv_path.stem.lower()
-        if any(t in stem for t in target_dbs):
-            default_app = "iMessage"
-            if "whatsapp" in stem:
-                default_app = "WhatsApp"
-            elif "telegram" in stem:
-                default_app = "Telegram"
-            elif "signal" in stem:
-                default_app = "Signal"
-            elif "session" in stem:
-                default_app = "Session"
-            elif "zangi" in stem:
-                default_app = "Zangi"
-            elif "sms" in stem:
-                default_app = "SMS/iMessage"
-
-            tsv_rows = case.read_tsv_records(tsv_path)
-            for row in tsv_rows:
-                process_row(row, default_app)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 

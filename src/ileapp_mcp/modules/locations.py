@@ -191,8 +191,7 @@ def get_location_history(
         if key not in seen:
             seen.add(key)
             total_count += 1
-            if len(filtered) < offset + limit:
-                filtered.append(loc)
+            filtered.append(loc)
 
     # 1. Search SQLite databases
     for db_path in case.get_all_sqlite_dbs():
