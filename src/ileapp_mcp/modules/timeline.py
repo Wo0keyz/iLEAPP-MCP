@@ -103,7 +103,7 @@ def get_timeline(
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='data'")
             if cursor.fetchone():
-                where_clauses = []
+                where_clauses = ["key != ''"]
                 params: list[Any] = []
                 if start_date:
                     where_clauses.append("key >= ?")

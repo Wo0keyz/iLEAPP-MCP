@@ -192,6 +192,9 @@ def get_messages(
     # 1. Search TSV/CSV files (Priority because they are properly joined by iLEAPP plugins)
     for tsv_path in case.get_all_tsv_files():
         stem = tsv_path.stem.lower()
+        # Exclude metadata TSVs that pollute message extraction
+        if "conversation" in stem or "contact" in stem or "group" in stem:
+            continue
         if any(t in stem for t in target_dbs):
             default_app = "iMessage"
             if "whatsapp" in stem:
