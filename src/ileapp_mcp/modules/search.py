@@ -37,20 +37,19 @@ def global_keyword_search(
                 # Check if keyword in any string value
                 match_found = False
                 matched_text = ""
-                for k, v in row.items():
-                    if v and isinstance(v, str):
-                        if kw_lower in v.lower():
-                            match_found = True
-                            # Snippet extraction
-                            idx = v.lower().find(kw_lower)
-                            start = max(0, idx - 40)
-                            end = min(len(v), idx + len(keyword) + 40)
-                            matched_text = (
-                                ("..." if start > 0 else "")
-                                + v[start:end]
-                                + ("..." if end < len(v) else "")
-                            )
-                            break
+                for _k, v in row.items():
+                    if v and isinstance(v, str) and kw_lower in v.lower():
+                        match_found = True
+                        # Snippet extraction
+                        idx = v.lower().find(kw_lower)
+                        start = max(0, idx - 40)
+                        end = min(len(v), idx + len(keyword) + 40)
+                        matched_text = (
+                            ("..." if start > 0 else "")
+                            + v[start:end]
+                            + ("..." if end < len(v) else "")
+                        )
+                        break
 
                 if match_found:
                     total_count += 1

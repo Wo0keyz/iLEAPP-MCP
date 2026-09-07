@@ -46,10 +46,10 @@ def get_cloud_identities(case: CaseManager) -> CloudIdentityProfile:
 
     return CloudIdentityProfile(
         device_name=device.device_name,
-        apple_ids=sorted(list(apple_ids)),
-        phone_numbers=sorted(list(phone_numbers)),
+        apple_ids=sorted(apple_ids),
+        phone_numbers=sorted(phone_numbers),
         imei=device.imei,
         serial_number=device.serial_number,
-        wifi_networks=sorted(list(wifi)),
-        bluetooth_devices=sorted(list(bt)),
+        wifi_networks=sorted(wifi),
+        bluetooth_devices=sorted(bt),
     )
