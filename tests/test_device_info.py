@@ -13,4 +13,3 @@ def test_get_device_info(loaded_case: CaseManager) -> None:
     assert info.phone_number == "+33612345678"
     assert "Paris" in (info.timezone or "")
     assert "GrayKey" in (info.extraction_type or "")
-    assert len(info.raw_metadata) >= 8

@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 
 T = TypeVar("T")
 
-
 class PaginatedResult(BaseModel, Generic[T]):
     """Standard pagination envelope for all list responses."""
 
@@ -16,7 +15,6 @@ class PaginatedResult(BaseModel, Generic[T]):
     next_offset: int | None = Field(
         default=None, description="Offset to use for the next page, or None if last page"
     )
-
 
 class DeviceInfo(BaseModel):
     """Forensic metadata and hardware info of the extracted iOS device."""
@@ -36,10 +34,6 @@ class DeviceInfo(BaseModel):
     extraction_date: str | None = Field(
         default=None, description="Date/time when the extraction was generated"
     )
-    raw_metadata: dict[str, str] = Field(
-        default_factory=dict, description="All raw key-value metadata parsed from iLEAPP"
-    )
-
 
 class MessageRecord(BaseModel):
     """Forensic record for messages (SMS, iMessage, WhatsApp, Telegram, etc.)."""
@@ -59,10 +53,6 @@ class MessageRecord(BaseModel):
     attachment_paths: list[str] = Field(
         default_factory=list, description="Relative paths or descriptions of attachments"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Full raw fields from the iLEAPP report"
-    )
-
 
 class CallRecord(BaseModel):
     """Forensic record for phone and VoIP calls (Cellular, FaceTime, WhatsApp, etc.)."""
@@ -79,10 +69,6 @@ class CallRecord(BaseModel):
         default=None, description="Resolved contact name if present in call log"
     )
     duration_seconds: int | None = Field(default=None, description="Call duration in seconds")
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
-
 
 class LocationRecord(BaseModel):
     """Forensic record for geographical locations and significant places."""
@@ -101,10 +87,6 @@ class LocationRecord(BaseModel):
     description: str | None = Field(
         default=None, description="Address, place name, or visit duration details"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
-
 
 class WebRecord(BaseModel):
     """Forensic record for web browsing activity (Safari, Chrome, etc.)."""
@@ -122,10 +104,6 @@ class WebRecord(BaseModel):
     search_term: str | None = Field(
         default=None, description="Extracted search term if query was a web search"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
-
 
 class AppRecord(BaseModel):
     """Forensic record for an installed application or app usage event."""
@@ -141,10 +119,6 @@ class AppRecord(BaseModel):
     permissions: list[str] = Field(
         default_factory=list, description="Granted permissions (Camera, Location, Contacts, etc.)"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
-
 
 class TimelineEvent(BaseModel):
     """Chronological event unified across multiple forensic artifact sources."""
@@ -161,7 +135,6 @@ class TimelineEvent(BaseModel):
         default_factory=dict, description="Detailed attributes of the event"
     )
 
-
 class ArtifactInfo(BaseModel):
     """Metadata describing a parsed artifact discovered in the iLEAPP report directory."""
 
@@ -174,7 +147,6 @@ class ArtifactInfo(BaseModel):
     )
     description: str | None = Field(default=None, description="Description of the artifact purpose")
 
-
 class SqlQueryResult(BaseModel):
     """Result of a read-only SQL query execution."""
 
@@ -186,7 +158,6 @@ class SqlQueryResult(BaseModel):
     truncated: bool = Field(
         default=False, description="True if results were truncated to the maximum limit"
     )
-
 
 class CaseInfo(BaseModel):
     """Overview and status of the currently loaded iLEAPP case directory."""
@@ -202,7 +173,6 @@ class CaseInfo(BaseModel):
         default_factory=dict, description="Summary of device information"
     )
 
-
 class HealthRecord(BaseModel):
     """Forensic record for health and biometric data (Steps, Heart Rate, Workouts, Sleep)."""
 
@@ -213,10 +183,6 @@ class HealthRecord(BaseModel):
     source_device: str | None = Field(
         default=None, description="Hardware source (Apple Watch, iPhone)"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
-
 
 class NoteRecord(BaseModel):
     """Forensic record for Apple Notes, Voice Memos, Reminders, and Calendar events."""
@@ -228,10 +194,6 @@ class NoteRecord(BaseModel):
     file_path: str | None = Field(
         default=None, description="Relative path to extracted file (e.g. .m4a audio)"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
-
 
 class PhotoRecord(BaseModel):
     """Forensic record for photos, videos, and media metadata (EXIF)."""
@@ -247,10 +209,6 @@ class PhotoRecord(BaseModel):
     file_path: str | None = Field(
         default=None, description="Relative path to the media file in the report"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
-
 
 class NetworkRecord(BaseModel):
     """Forensic record for wireless connections (Wi-Fi, Bluetooth, Cell Towers)."""
@@ -264,10 +222,6 @@ class NetworkRecord(BaseModel):
     duration_seconds: int | None = Field(
         default=None, description="Duration of connection if applicable"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
-
 
 class SystemStateRecord(BaseModel):
     """Forensic record for system power state, lock cycles, and KnowledgeC/Biome events."""
@@ -277,6 +231,4 @@ class SystemStateRecord(BaseModel):
     value: str | None = Field(
         default=None, description="State value (e.g. '100%', 'Locked', 'com.apple.camera')"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
+

@@ -159,5 +159,4 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
             "Processing Date",
             "Generated On",
         ),
-        raw_metadata=raw_meta,
     )
