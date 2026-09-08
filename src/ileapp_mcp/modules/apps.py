@@ -101,6 +101,7 @@ def get_installed_apps(
     case: CaseManager,
     app_name: str | None = None,
     bundle_id: str | None = None,
+    exclude_system_apps: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> PaginatedResult[AppRecord]:
@@ -138,6 +139,10 @@ def get_installed_apps(
             rec.app_name = rec.bundle_id.split(".")[-1].capitalize()
 
         if not rec.bundle_id and not rec.app_name:
+            return
+
+        # Filtering logic
+        if exclude_system_apps and rec.bundle_id and rec.bundle_id.lower().startswith("com.apple."):
             return
 
         if app_name and (not rec.app_name or app_name.lower() not in rec.app_name.lower()):

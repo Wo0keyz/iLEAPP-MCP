@@ -264,6 +264,7 @@ def get_web_activity(
 def get_installed_apps(
     app_name: str | None = None,
     bundle_id: str | None = None,
+    exclude_system_apps: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> PaginatedResult[AppRecord]:
@@ -272,6 +273,7 @@ def get_installed_apps(
     Args:
         app_name: Filter by application display name.
         bundle_id: Filter by bundle ID (e.g. 'com.apple.mobilesafari').
+        exclude_system_apps: Filter out com.apple system apps by default.
         limit: Page size limit (max 250, default 50).
         offset: Pagination offset.
     """
@@ -279,6 +281,7 @@ def get_installed_apps(
         case_manager,
         app_name=app_name,
         bundle_id=bundle_id,
+        exclude_system_apps=exclude_system_apps,
         limit=limit,
         offset=offset,
     )
