@@ -95,35 +95,27 @@ def get_case_info() -> CaseInfo:
             case_path="None",
             loaded=False,
             total_artifacts=0,
-            sqlite_databases=[],
-            tsv_files=[],
             device_summary={},
         )
 
-    all_dbs = [p.name for p in case_manager.get_all_sqlite_dbs()]
-    all_tsvs = [p.name for p in case_manager.get_all_tsv_files()]
+    # Summarize device info safely
+    device = _get_device_info(case_manager)
+    summary = {}
+    if device.device_name:
+        summary["Device Name"] = device.device_name
+    if device.ios_version:
+        summary["iOS Version"] = device.ios_version
+    if device.product_type:
+        summary["Product Type"] = device.product_type
 
-    dev_summary = {}
-    try:
-        info = _get_device_info(case_manager)
-        if info.device_name:
-            dev_summary["Device Name"] = info.device_name
-        if info.ios_version:
-            dev_summary["iOS Version"] = info.ios_version
-        if info.product_type:
-            dev_summary["Model"] = info.product_type
-        if info.serial_number:
-            dev_summary["Serial"] = info.serial_number
-    except Exception:
-        pass
+    all_dbs = case_manager.get_all_sqlite_dbs()
+    all_tsvs = case_manager.get_all_tsv_files()
 
     return CaseInfo(
         case_path=str(case_manager.case_path),
         loaded=True,
         total_artifacts=len(all_dbs) + len(all_tsvs),
-        sqlite_databases=all_dbs,
-        tsv_files=all_tsvs,
-        device_summary=dev_summary,
+        device_summary=summary,
     )
 
 
@@ -272,6 +264,7 @@ def get_web_activity(
 def get_installed_apps(
     app_name: str | None = None,
     bundle_id: str | None = None,
+    exclude_system_apps: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> PaginatedResult[AppRecord]:
@@ -280,6 +273,7 @@ def get_installed_apps(
     Args:
         app_name: Filter by application display name.
         bundle_id: Filter by bundle ID (e.g. 'com.apple.mobilesafari').
+        exclude_system_apps: Filter out com.apple system apps by default.
         limit: Page size limit (max 250, default 50).
         offset: Pagination offset.
     """
@@ -287,6 +281,7 @@ def get_installed_apps(
         case_manager,
         app_name=app_name,
         bundle_id=bundle_id,
+        exclude_system_apps=exclude_system_apps,
         limit=limit,
         offset=offset,
     )

@@ -146,7 +146,6 @@ def get_network_connections(
                     ssid_or_name=name_str,
                     bssid_or_mac=mac_str,
                     duration_seconds=dur_val,
-                    raw_data=row,
                 )
             )
 

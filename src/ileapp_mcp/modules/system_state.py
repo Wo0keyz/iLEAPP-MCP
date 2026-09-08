@@ -126,7 +126,6 @@ def get_system_state(
                     timestamp=ts_str,
                     event_type=etype,
                     value=val_str,
-                    raw_data=row,
                 )
             )
 

@@ -136,7 +136,6 @@ def get_photos_metadata(
                     is_deleted=is_del,
                     album_name=album_str,
                     file_path=fpath_str,
-                    raw_data=row,
                 )
             )
 

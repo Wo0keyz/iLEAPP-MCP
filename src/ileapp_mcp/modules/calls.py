@@ -85,7 +85,6 @@ def _normalize_call_record(raw: dict[str, Any], default_app: str = "Cellular") -
         phone_number=number_str,
         contact_name=name_str,
         duration_seconds=duration,
-        raw_data=raw,
     )
 
 

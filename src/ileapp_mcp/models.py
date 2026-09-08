@@ -36,9 +36,6 @@ class DeviceInfo(BaseModel):
     extraction_date: str | None = Field(
         default=None, description="Date/time when the extraction was generated"
     )
-    raw_metadata: dict[str, str] = Field(
-        default_factory=dict, description="All raw key-value metadata parsed from iLEAPP"
-    )
 
 
 class MessageRecord(BaseModel):
@@ -59,9 +56,6 @@ class MessageRecord(BaseModel):
     attachment_paths: list[str] = Field(
         default_factory=list, description="Relative paths or descriptions of attachments"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Full raw fields from the iLEAPP report"
-    )
 
 
 class CallRecord(BaseModel):
@@ -79,9 +73,6 @@ class CallRecord(BaseModel):
         default=None, description="Resolved contact name if present in call log"
     )
     duration_seconds: int | None = Field(default=None, description="Call duration in seconds")
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
 
 
 class LocationRecord(BaseModel):
@@ -101,9 +92,6 @@ class LocationRecord(BaseModel):
     description: str | None = Field(
         default=None, description="Address, place name, or visit duration details"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
 
 
 class WebRecord(BaseModel):
@@ -122,9 +110,6 @@ class WebRecord(BaseModel):
     search_term: str | None = Field(
         default=None, description="Extracted search term if query was a web search"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
 
 
 class AppRecord(BaseModel):
@@ -140,9 +125,6 @@ class AppRecord(BaseModel):
     app_path: str | None = Field(default=None, description="Filesystem sandbox path")
     permissions: list[str] = Field(
         default_factory=list, description="Granted permissions (Camera, Location, Contacts, etc.)"
-    )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
     )
 
 
@@ -194,10 +176,6 @@ class CaseInfo(BaseModel):
     case_path: str = Field(description="Filesystem path of the loaded case directory")
     loaded: bool = Field(description="Whether the case is successfully loaded and validated")
     total_artifacts: int = Field(description="Total number of discovered artifact tables/files")
-    sqlite_databases: list[str] = Field(
-        default_factory=list, description="List of discovered SQLite databases"
-    )
-    tsv_files: list[str] = Field(default_factory=list, description="List of discovered TSV files")
     device_summary: dict[str, str] = Field(
         default_factory=dict, description="Summary of device information"
     )
@@ -213,9 +191,6 @@ class HealthRecord(BaseModel):
     source_device: str | None = Field(
         default=None, description="Hardware source (Apple Watch, iPhone)"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
 
 
 class NoteRecord(BaseModel):
@@ -227,9 +202,6 @@ class NoteRecord(BaseModel):
     content: str | None = Field(default=None, description="Text content or summary")
     file_path: str | None = Field(
         default=None, description="Relative path to extracted file (e.g. .m4a audio)"
-    )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
     )
 
 
@@ -247,9 +219,6 @@ class PhotoRecord(BaseModel):
     file_path: str | None = Field(
         default=None, description="Relative path to the media file in the report"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
 
 
 class NetworkRecord(BaseModel):
@@ -264,9 +233,6 @@ class NetworkRecord(BaseModel):
     duration_seconds: int | None = Field(
         default=None, description="Duration of connection if applicable"
     )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
-    )
 
 
 class SystemStateRecord(BaseModel):
@@ -276,7 +242,4 @@ class SystemStateRecord(BaseModel):
     event_type: str = Field(description="Event type (Lock, Unlock, Battery, Reboot, AppForeground)")
     value: str | None = Field(
         default=None, description="State value (e.g. '100%', 'Locked', 'com.apple.camera')"
-    )
-    raw_data: dict[str, Any] = Field(
-        default_factory=dict, description="Raw fields from the iLEAPP report"
     )

@@ -90,7 +90,6 @@ def _normalize_web_record(
         title=title,
         visit_count=visit_count,
         search_term=search_term,
-        raw_data=raw,
     )
 
 
