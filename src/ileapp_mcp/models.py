@@ -165,10 +165,6 @@ class CaseInfo(BaseModel):
     case_path: str = Field(description="Filesystem path of the loaded case directory")
     loaded: bool = Field(description="Whether the case is successfully loaded and validated")
     total_artifacts: int = Field(description="Total number of discovered artifact tables/files")
-    sqlite_databases: list[str] = Field(
-        default_factory=list, description="List of discovered SQLite databases"
-    )
-    tsv_files: list[str] = Field(default_factory=list, description="List of discovered TSV files")
     device_summary: dict[str, str] = Field(
         default_factory=dict, description="Summary of device information"
     )
