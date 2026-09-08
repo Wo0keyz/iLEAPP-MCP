@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 T = TypeVar("T")
 
+
 class PaginatedResult(BaseModel, Generic[T]):
     """Standard pagination envelope for all list responses."""
 
@@ -15,6 +16,7 @@ class PaginatedResult(BaseModel, Generic[T]):
     next_offset: int | None = Field(
         default=None, description="Offset to use for the next page, or None if last page"
     )
+
 
 class DeviceInfo(BaseModel):
     """Forensic metadata and hardware info of the extracted iOS device."""
@@ -35,6 +37,7 @@ class DeviceInfo(BaseModel):
         default=None, description="Date/time when the extraction was generated"
     )
 
+
 class MessageRecord(BaseModel):
     """Forensic record for messages (SMS, iMessage, WhatsApp, Telegram, etc.)."""
 
@@ -54,6 +57,7 @@ class MessageRecord(BaseModel):
         default_factory=list, description="Relative paths or descriptions of attachments"
     )
 
+
 class CallRecord(BaseModel):
     """Forensic record for phone and VoIP calls (Cellular, FaceTime, WhatsApp, etc.)."""
 
@@ -69,6 +73,7 @@ class CallRecord(BaseModel):
         default=None, description="Resolved contact name if present in call log"
     )
     duration_seconds: int | None = Field(default=None, description="Call duration in seconds")
+
 
 class LocationRecord(BaseModel):
     """Forensic record for geographical locations and significant places."""
@@ -88,6 +93,7 @@ class LocationRecord(BaseModel):
         default=None, description="Address, place name, or visit duration details"
     )
 
+
 class WebRecord(BaseModel):
     """Forensic record for web browsing activity (Safari, Chrome, etc.)."""
 
@@ -105,6 +111,7 @@ class WebRecord(BaseModel):
         default=None, description="Extracted search term if query was a web search"
     )
 
+
 class AppRecord(BaseModel):
     """Forensic record for an installed application or app usage event."""
 
@@ -119,6 +126,7 @@ class AppRecord(BaseModel):
     permissions: list[str] = Field(
         default_factory=list, description="Granted permissions (Camera, Location, Contacts, etc.)"
     )
+
 
 class TimelineEvent(BaseModel):
     """Chronological event unified across multiple forensic artifact sources."""
@@ -135,6 +143,7 @@ class TimelineEvent(BaseModel):
         default_factory=dict, description="Detailed attributes of the event"
     )
 
+
 class ArtifactInfo(BaseModel):
     """Metadata describing a parsed artifact discovered in the iLEAPP report directory."""
 
@@ -146,6 +155,7 @@ class ArtifactInfo(BaseModel):
         default=None, description="Number of parsed records in this artifact"
     )
     description: str | None = Field(default=None, description="Description of the artifact purpose")
+
 
 class SqlQueryResult(BaseModel):
     """Result of a read-only SQL query execution."""
@@ -159,6 +169,7 @@ class SqlQueryResult(BaseModel):
         default=False, description="True if results were truncated to the maximum limit"
     )
 
+
 class CaseInfo(BaseModel):
     """Overview and status of the currently loaded iLEAPP case directory."""
 
@@ -168,6 +179,7 @@ class CaseInfo(BaseModel):
     device_summary: dict[str, str] = Field(
         default_factory=dict, description="Summary of device information"
     )
+
 
 class HealthRecord(BaseModel):
     """Forensic record for health and biometric data (Steps, Heart Rate, Workouts, Sleep)."""
@@ -180,6 +192,7 @@ class HealthRecord(BaseModel):
         default=None, description="Hardware source (Apple Watch, iPhone)"
     )
 
+
 class NoteRecord(BaseModel):
     """Forensic record for Apple Notes, Voice Memos, Reminders, and Calendar events."""
 
@@ -190,6 +203,7 @@ class NoteRecord(BaseModel):
     file_path: str | None = Field(
         default=None, description="Relative path to extracted file (e.g. .m4a audio)"
     )
+
 
 class PhotoRecord(BaseModel):
     """Forensic record for photos, videos, and media metadata (EXIF)."""
@@ -206,6 +220,7 @@ class PhotoRecord(BaseModel):
         default=None, description="Relative path to the media file in the report"
     )
 
+
 class NetworkRecord(BaseModel):
     """Forensic record for wireless connections (Wi-Fi, Bluetooth, Cell Towers)."""
 
@@ -219,6 +234,7 @@ class NetworkRecord(BaseModel):
         default=None, description="Duration of connection if applicable"
     )
 
+
 class SystemStateRecord(BaseModel):
     """Forensic record for system power state, lock cycles, and KnowledgeC/Biome events."""
 
@@ -227,4 +243,3 @@ class SystemStateRecord(BaseModel):
     value: str | None = Field(
         default=None, description="State value (e.g. '100%', 'Locked', 'com.apple.camera')"
     )
-
