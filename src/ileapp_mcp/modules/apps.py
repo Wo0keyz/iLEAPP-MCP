@@ -93,7 +93,6 @@ def _normalize_app_record(raw: dict[str, Any]) -> AppRecord:
         developer=str(developer).strip() if developer else None,
         app_path=str(path).strip() if path else None,
         permissions=permissions,
-        raw_data=raw,
     )
 
 
@@ -150,7 +149,7 @@ def get_installed_apps(
         if bundle_id and (not rec.bundle_id or bundle_id.lower() not in rec.bundle_id.lower()):
             return
 
-        key = rec.bundle_id or rec.app_name or str(rec.raw_data)
+        key = rec.bundle_id or rec.app_name or ""
         if key not in merged_map:
             merged_map[key] = rec
         else:

@@ -141,7 +141,6 @@ def get_health_data(
                     value=val_str,
                     unit=unit_str,
                     source_device=source_str,
-                    raw_data=row,
                 )
             )
 

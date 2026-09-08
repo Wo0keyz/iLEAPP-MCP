@@ -118,7 +118,6 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
         direction=direction,
         attachment_count=len(attachments),
         attachment_paths=attachments,
-        raw_data=raw,
     )
 
 

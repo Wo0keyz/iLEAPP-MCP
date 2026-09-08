@@ -117,7 +117,6 @@ def get_notes_and_memos(
                     title=title_str,
                     content=content_str,
                     file_path=fpath_str,
-                    raw_data=row,
                 )
             )
 

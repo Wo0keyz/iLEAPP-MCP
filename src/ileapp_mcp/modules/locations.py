@@ -122,7 +122,6 @@ def _normalize_location_record(raw: dict[str, Any], default_source: str = "GPS")
         horizontal_accuracy=acc,
         source_type=source,
         description=desc,
-        raw_data=raw,
     )
 
 
