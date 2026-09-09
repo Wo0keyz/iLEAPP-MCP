@@ -102,6 +102,17 @@ def _infer_category(name: str) -> str:
     return "Other Artifacts"
 
 
+def _truncate_huge_fields(row: dict[str, Any], max_len: int = 1000) -> dict[str, Any]:
+    """Truncate extremely long strings in raw rows to prevent LLM context explosion."""
+    truncated = {}
+    for k, v in row.items():
+        if isinstance(v, str) and len(v) > max_len:
+            truncated[k] = v[:max_len] + f"... <truncated {len(v) - max_len} more characters>"
+        else:
+            truncated[k] = v
+    return truncated
+
+
 def get_raw_artifact_data(
     case: CaseManager,
     artifact_name: str,
@@ -138,8 +149,11 @@ def get_raw_artifact_data(
                 db_path, query, params=tuple(params), limit=limit, offset=offset
             )
             has_more = (offset + limit) < total
+
+            safe_rows = [_truncate_huge_fields(r) for r in fetched_rows]
+
             return PaginatedResult[dict[str, Any]](
-                items=fetched_rows,
+                items=safe_rows,
                 total_count=total,
                 has_more=has_more,
                 limit=limit,
@@ -159,7 +173,7 @@ def get_raw_artifact_data(
                 continue
             total += 1
             if len(matched) < offset + limit:
-                matched.append(r)
+                matched.append(_truncate_huge_fields(r))
 
         page = matched[offset : offset + limit]
         has_more = (offset + limit) < total
@@ -197,8 +211,11 @@ def get_raw_artifact_data(
                     db_path, query, params=tuple(params), limit=limit, offset=offset
                 )
                 has_more = (offset + limit) < total
+
+                safe_rows = [_truncate_huge_fields(r) for r in fetched_rows]
+
                 return PaginatedResult[dict[str, Any]](
-                    items=fetched_rows,
+                    items=safe_rows,
                     total_count=total,
                     has_more=has_more,
                     limit=limit,
@@ -241,13 +258,15 @@ def run_readonly_sql(
             target_db_path = all_dbs[0]
 
     max_rows = max(1, min(max_rows, 500))
-    columns, rows, total_count = case.query_sqlite(target_db_path, query, limit=max_rows, offset=0)
+    cols, rows, total = case.query_sqlite(target_db_path, query, limit=max_rows, offset=0)
+
+    safe_rows = [_truncate_huge_fields(r) for r in rows]
 
     return SqlQueryResult(
         query=query,
         db_name=target_db_path.name,
-        columns=columns,
-        rows=rows,
-        row_count=len(rows),
-        truncated=total_count > len(rows),
+        columns=cols,
+        rows=safe_rows,
+        row_count=len(safe_rows),
+        truncated=total > max_rows,
     )
