@@ -149,7 +149,7 @@ def get_raw_artifact_data(
                 db_path, query, params=tuple(params), limit=limit, offset=offset
             )
             has_more = (offset + limit) < total
-            
+
             safe_rows = [_truncate_huge_fields(r) for r in fetched_rows]
 
             return PaginatedResult[dict[str, Any]](
@@ -211,7 +211,7 @@ def get_raw_artifact_data(
                     db_path, query, params=tuple(params), limit=limit, offset=offset
                 )
                 has_more = (offset + limit) < total
-                
+
                 safe_rows = [_truncate_huge_fields(r) for r in fetched_rows]
 
                 return PaginatedResult[dict[str, Any]](
@@ -259,7 +259,7 @@ def run_readonly_sql(
 
     max_rows = max(1, min(max_rows, 500))
     cols, rows, total = case.query_sqlite(target_db_path, query, limit=max_rows, offset=0)
-    
+
     safe_rows = [_truncate_huge_fields(r) for r in rows]
 
     return SqlQueryResult(
