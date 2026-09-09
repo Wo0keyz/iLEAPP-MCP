@@ -193,7 +193,11 @@ def get_messages(
     for tsv_path in case.get_all_tsv_files():
         stem = tsv_path.stem.lower()
         # Exclude metadata TSVs that pollute message extraction
-        if ("conversation" in stem and "snapchat" not in stem) or "contact" in stem or "group" in stem:
+        if (
+            ("conversation" in stem and "snapchat" not in stem)
+            or "contact" in stem
+            or "group" in stem
+        ):
             continue
         if any(t in stem for t in target_dbs):
             default_app = "iMessage"
@@ -217,7 +221,17 @@ def get_messages(
                 process_row(row, default_app)
 
     # 2. Search SQLite databases (Fallback for unsupported apps, exclude complex CoreData databases)
-    sqlite_dbs = ["sms", "message", "imessage", "whatsapp", "telegram", "chat", "viber", "snapchat", "picaboo"]
+    sqlite_dbs = [
+        "sms",
+        "message",
+        "imessage",
+        "whatsapp",
+        "telegram",
+        "chat",
+        "viber",
+        "snapchat",
+        "picaboo",
+    ]
     for db_path in case.get_all_sqlite_dbs():
         stem = db_path.stem.lower()
         if any(t in stem for t in sqlite_dbs):
