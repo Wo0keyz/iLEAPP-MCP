@@ -150,6 +150,7 @@ def get_messages(
         "viber",
         "zangidb",
         "session",
+        "snapchat",
     ]
 
     seen = set()
@@ -192,7 +193,11 @@ def get_messages(
     for tsv_path in case.get_all_tsv_files():
         stem = tsv_path.stem.lower()
         # Exclude metadata TSVs that pollute message extraction
-        if "conversation" in stem or "contact" in stem or "group" in stem:
+        if (
+            ("conversation" in stem and "snapchat" not in stem)
+            or "contact" in stem
+            or "group" in stem
+        ):
             continue
         if any(t in stem for t in target_dbs):
             default_app = "iMessage"
@@ -206,6 +211,8 @@ def get_messages(
                 default_app = "Session"
             elif "zangi" in stem:
                 default_app = "Zangi"
+            elif "snapchat" in stem:
+                default_app = "Snapchat"
             elif "sms" in stem:
                 default_app = "SMS/iMessage"
 
@@ -214,7 +221,17 @@ def get_messages(
                 process_row(row, default_app)
 
     # 2. Search SQLite databases (Fallback for unsupported apps, exclude complex CoreData databases)
-    sqlite_dbs = ["sms", "message", "imessage", "whatsapp", "telegram", "chat", "viber"]
+    sqlite_dbs = [
+        "sms",
+        "message",
+        "imessage",
+        "whatsapp",
+        "telegram",
+        "chat",
+        "viber",
+        "snapchat",
+        "picaboo",
+    ]
     for db_path in case.get_all_sqlite_dbs():
         stem = db_path.stem.lower()
         if any(t in stem for t in sqlite_dbs):
@@ -229,12 +246,14 @@ def get_messages(
                     db_app = "iMessage"
                     if "whatsapp" in stem or "whatsapp" in table.lower():
                         db_app = "WhatsApp"
-                    elif "telegram" in stem:
+                    elif "telegram" in stem or "telegram" in table.lower():
                         db_app = "Telegram"
-                    elif "signal" in stem:
-                        db_app = "Signal"
-                    elif "session" in stem:
-                        db_app = "Session"
+                    elif "viber" in stem or "viber" in table.lower():
+                        db_app = "Viber"
+                    elif "snapchat" in stem or "picaboo" in stem:
+                        db_app = "Snapchat"
+                    elif "sms" in stem or "imessage" in stem or "chat" in stem:
+                        db_app = "SMS/iMessage"
                     elif "zangi" in stem:
                         db_app = "Zangi"
                     elif "sms" in stem:
