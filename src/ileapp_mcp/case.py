@@ -4,12 +4,19 @@ import logging
 import os
 import re
 import sqlite3
+import tempfile
 import threading
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Stateless MCP clients (e.g. Crush) restart the server per call; set ILEAPP_MCP_RESUME_LAST_CASE=1
+# to let them reload the last case. Off by default so one client cannot change another's case.
+_RESUME_LAST_CASE = os.environ.get("ILEAPP_MCP_RESUME_LAST_CASE") == "1"
+_STATE_FILE = os.path.join(tempfile.gettempdir(), ".ileapp_mcp_last_case")
+_MAX_FILES_TO_SCAN = 2_000_000  # guard against pointing the server at a filesystem root
 
 
 class CaseManager:
@@ -23,18 +30,16 @@ class CaseManager:
         self._db_connections: dict[str, sqlite3.Connection] = {}
         self._lock = threading.RLock()
         self.is_loaded = False
+        self.index_truncated = False
 
         if case_dir:
             self.load_case(case_dir)
-        else:
-            # Auto-resume state if available
+        elif _RESUME_LAST_CASE:
+            # Opt-in only: resuming "the last case" silently mixes cases when several
+            # clients or test runs share the machine.
             try:
-                import os
-                import tempfile
-
-                state_file = os.path.join(tempfile.gettempdir(), ".ileapp_mcp_last_case")
-                if os.path.exists(state_file):
-                    with open(state_file, encoding="utf-8") as f:
+                if os.path.exists(_STATE_FILE):
+                    with open(_STATE_FILE, encoding="utf-8") as f:
                         saved_path = f.read().strip()
                     if saved_path and os.path.exists(saved_path):
                         self.load_case(saved_path)
@@ -59,14 +64,12 @@ class CaseManager:
             logger.info("Loaded iLEAPP case from %s (root: %s)", target_path, self._report_root)
 
             # Persist state to survive stateless MCP clients (like Crush restarting the process)
-            try:
-                import tempfile
-
-                state_file = os.path.join(tempfile.gettempdir(), ".ileapp_mcp_last_case")
-                with open(state_file, "w", encoding="utf-8") as f:
-                    f.write(str(target_path))
-            except Exception as e:
-                logger.debug("Could not save state: %s", e)
+            if _RESUME_LAST_CASE:
+                try:
+                    with open(_STATE_FILE, "w", encoding="utf-8") as f:
+                        f.write(str(target_path))
+                except Exception as e:
+                    logger.debug("Could not save state: %s", e)
 
             return True
 
@@ -97,30 +100,19 @@ class CaseManager:
         if not self._report_root or not self._report_root.exists():
             return
 
-        import hashlib
-        import pickle
-        import tempfile
-
-        cache_key = hashlib.md5(str(self._report_root).encode()).hexdigest()
-        cache_file = Path(tempfile.gettempdir()) / f".ileapp_index_{cache_key}.pkl"
-
-        if cache_file.exists():
-            try:
-                with open(cache_file, "rb") as f:
-                    cached_dbs, cached_tsvs = pickle.load(f)
-                    self._sqlite_dbs = cached_dbs
-                    self._tsv_files = cached_tsvs
-                    return
-            except Exception:
-                pass
-
+        # No on-disk index cache: a stale cache hides files added to the case, and unpickling
+        # from a shared temp directory executes whatever another local user put there.
+        self.index_truncated = False
         file_count = 0
-        max_files_to_scan = 50000  # Prevent DoS on massive root directories
         for p in self._report_root.rglob("*"):
             file_count += 1
-            if file_count > max_files_to_scan:
-                logger.warning(
-                    f"Reached maximum file scan limit ({max_files_to_scan}) in {self._report_root}. Stopping indexing."
+            if file_count > _MAX_FILES_TO_SCAN:
+                # Never silent: get_case_info reports index_truncated so callers can refuse.
+                self.index_truncated = True
+                logger.error(
+                    "Index truncated at %d entries in %s: some artifacts are NOT indexed.",
+                    _MAX_FILES_TO_SCAN,
+                    self._report_root,
                 )
                 break
 
@@ -139,12 +131,6 @@ class CaseManager:
                 self._tsv_files[stem] = p
                 self._tsv_files[rel_name.lower()] = p
 
-        try:
-            with open(cache_file, "wb") as f:
-                pickle.dump((self._sqlite_dbs, self._tsv_files), f)
-        except Exception:
-            pass
-
     def get_sqlite_path(self, name_hint: str) -> Path | None:
         """Find a SQLite database path by name hint or pattern."""
         with self._lock:
@@ -157,12 +143,14 @@ class CaseManager:
                     return path
             return None
 
-    def get_tsv_path(self, name_hint: str) -> Path | None:
-        """Find a TSV/CSV path by name hint or pattern."""
+    def get_tsv_path(self, name_hint: str, exact: bool = False) -> Path | None:
+        """Find a TSV/CSV path by exact name, else (unless exact) by substring."""
         with self._lock:
             hint = name_hint.lower()
             if hint in self._tsv_files:
                 return self._tsv_files[hint]
+            if exact:
+                return None
 
             for key, path in self._tsv_files.items():
                 if hint in key:
@@ -294,6 +282,16 @@ class CaseManager:
         """Return distinct SQLite database paths discovered."""
         with self._lock:
             return sorted(set(self._sqlite_dbs.values()))
+
+    def get_report_sqlite_dbs(self) -> list[Path]:
+        """SQLite databases produced by the report tool, excluding the raw iOS files under data/."""
+        with self._lock:
+            root = self.case_path
+            return [
+                p
+                for p in sorted(set(self._sqlite_dbs.values()))
+                if root is None or p.relative_to(root).parts[:1] != ("data",)
+            ]
 
     def get_all_tsv_files(self) -> list[Path]:
         """Return distinct TSV/CSV file paths discovered."""

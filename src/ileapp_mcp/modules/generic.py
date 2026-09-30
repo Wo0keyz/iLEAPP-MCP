@@ -46,7 +46,7 @@ def list_available_artifacts(case: CaseManager) -> list[ArtifactInfo]:
                     )
                 )
         except Exception as e:
-            logger.debug("Error indexing SQLite DB %s: %s", db_path, e)
+            logger.warning("Error indexing SQLite DB %s: %s", db_path, e)
 
     # 2. Inspect TSV files using fast line counting
     for tsv_path in case.get_all_tsv_files():
@@ -119,8 +119,13 @@ def get_raw_artifact_data(
     filters: dict[str, str] | None = None,
     limit: int = 50,
     offset: int = 0,
+    exact: bool = False,
 ) -> PaginatedResult[dict[str, Any]]:
-    """Query raw tabular data from any specific artifact (SQLite table or TSV file)."""
+    """Query raw tabular data from any specific artifact (SQLite table or TSV file).
+
+    With exact=True only a TSV export whose name is exactly artifact_name is accepted: the
+    default lookup falls back to substring matching and can return a different artifact.
+    """
     if not case.is_loaded:
         raise ValueError("No case loaded. Please call load_case first.")
 
@@ -162,7 +167,7 @@ def get_raw_artifact_data(
             )
 
     # 2. Try TSV file match
-    tsv_path = case.get_tsv_path(artifact_name)
+    tsv_path = case.get_tsv_path(artifact_name, exact=exact)
     if tsv_path:
         matched: list[dict[str, Any]] = []
         total = 0
@@ -187,7 +192,7 @@ def get_raw_artifact_data(
         )
 
     # 3. Try finding a SQLite table with that name across all databases
-    for db_path in case.get_all_sqlite_dbs():
+    for db_path in [] if exact else case.get_all_sqlite_dbs():
         try:
             conn = case.get_sqlite_connection(db_path)
             cursor = conn.cursor()

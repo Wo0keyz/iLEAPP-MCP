@@ -147,7 +147,7 @@ mypy src
 
 ### 🛡️ Production & Forensics Hardening
 * **In-Memory Chronological Sorting**: Evaluates records and filters on-the-fly, loading matched items into memory for strict chronological sorting. Ensures deterministic pagination without duplicating data, utilizing optimized Python `list.sort()` which easily handles 100,000+ forensic records in ~20MB RAM.
-* **Stateless Client Resilience**: Automatically persists the active case path to `.ileapp_mcp_last_case` in the system temporary directory so that client processes (like Charm Crush in `stdio` mode) seamlessly resume case context across restarts.
+* **Stateless Client Resilience** (opt-in, `ILEAPP_MCP_RESUME_LAST_CASE=1`; off by default so that one client cannot silently change the case another one is reading): persists the active case path to `.ileapp_mcp_last_case` in the system temporary directory so that client processes (like Charm Crush in `stdio` mode) seamlessly resume case context across restarts.
 * **RFC 8259 JSON Sanitization**: Ensures all coordinates and floats are bounded and non-NaN/non-Inf, and SQLite BLOB objects are automatically sanitized into truncated hexadecimal strings.
 * **Timeline Accelerator**: Utilizes iLEAPP's pre-compiled `_Timeline/tl.db` database directly for instant sub-second chronological timeline queries.
 

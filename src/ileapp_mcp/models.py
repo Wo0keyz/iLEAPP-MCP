@@ -176,6 +176,10 @@ class CaseInfo(BaseModel):
     case_path: str = Field(description="Filesystem path of the loaded case directory")
     loaded: bool = Field(description="Whether the case is successfully loaded and validated")
     total_artifacts: int = Field(description="Total number of discovered artifact tables/files")
+    index_truncated: bool = Field(
+        default=False,
+        description="True if indexing stopped at the scan limit: some artifacts are missing",
+    )
     device_summary: dict[str, str] = Field(
         default_factory=dict, description="Summary of device information"
     )

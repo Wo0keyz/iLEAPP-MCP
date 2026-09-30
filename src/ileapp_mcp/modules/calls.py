@@ -149,7 +149,7 @@ def get_call_history(
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
                         process_row(row_dict, default_app)
             except Exception as e:
-                logger.debug("Error reading calls from SQLite %s: %s", db_path, e)
+                logger.warning("Error reading calls from SQLite %s: %s", db_path, e)
 
     # 2. Search TSV files
     for tsv_path in case.get_all_tsv_files():

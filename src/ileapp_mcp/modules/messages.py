@@ -205,7 +205,7 @@ def get_messages(
     filtered: list[MessageRecord] = []
     total_count = 0
 
-    def process_row(r_dict: dict[str, Any], db_app: str) -> None:
+    def process_row(r_dict: dict[str, Any], db_app: str, from_export: bool) -> None:
         nonlocal total_count
 
         # Quick pre-filter if it's clearly not matching app
@@ -232,14 +232,15 @@ def get_messages(
         if end_date and msg.timestamp and msg.timestamp > end_date:
             return
 
-        key = (msg.timestamp or "", msg.sender or "", msg.message_text or "", msg.app)
-        if key not in seen:
+        # Every row of an iLEAPP export is kept: two identical texts sent in the same second are
+        # two messages. Only database rows that repeat an already exported message are dropped.
+        key = (msg.timestamp or "", msg.sender or "", msg.message_text or "")
+        if from_export or key not in seen:
             seen.add(key)
             total_count += 1
             filtered.append(msg)
 
     # 1. Search TSV/CSV files (Priority because they are properly joined by iLEAPP plugins)
-    covered: set[str] = set()  # message families already served by a TSV export
     for tsv_path in case.get_all_tsv_files():
         stem = tsv_path.stem.lower()
         # Exclude metadata TSVs that pollute message extraction
@@ -251,7 +252,6 @@ def get_messages(
         ):
             continue
         if any(t in stem for t in target_dbs):
-            covered.update(t for t in target_dbs if t in stem)
             default_app = "iMessage"
             if "whatsapp" in stem:
                 default_app = "WhatsApp"
@@ -270,10 +270,11 @@ def get_messages(
 
             tsv_rows = case.read_tsv_records(tsv_path)
             for row in tsv_rows:
-                process_row(row, default_app)
+                process_row(row, default_app, from_export=True)
 
-    # 2. SQLite fallback, per database: skipped when TSV exports already cover every message
-    #    family the database name points to (raw iOS databases would only add unjoined rows).
+    # 2. Report-level SQLite databases (report formats that ship messages as SQLite).
+    #    The raw iOS databases copied under data/ are never scanned here: iLEAPP already joined
+    #    them into the exports above, and their bare tables would only add unjoined rows.
     sqlite_dbs = [
         "sms",
         "message",
@@ -285,10 +286,9 @@ def get_messages(
         "snapchat",
         "picaboo",
     ]
-    for db_path in case.get_all_sqlite_dbs():
+    for db_path in case.get_report_sqlite_dbs():
         stem = db_path.stem.lower()
-        hints = [t for t in sqlite_dbs if t in stem]
-        if not hints or all(t in covered for t in hints):
+        if not any(t in stem for t in sqlite_dbs):
             continue
         try:
             conn = case.get_sqlite_connection(db_path)
@@ -311,9 +311,9 @@ def get_messages(
                     db_app = "SMS/iMessage"
 
                 for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
-                    process_row(row_dict, db_app)
+                    process_row(row_dict, db_app, from_export=False)
         except Exception as e:
-            logger.debug("Error querying SQLite messages from %s: %s", db_path, e)
+            logger.warning("Error querying SQLite messages from %s: %s", db_path, e)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 

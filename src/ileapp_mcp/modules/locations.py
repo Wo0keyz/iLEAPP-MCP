@@ -222,7 +222,7 @@ def get_location_history(
                     ):
                         break
             except Exception as e:
-                logger.debug("Error reading locations from SQLite %s: %s", db_path, e)
+                logger.warning("Error reading locations from SQLite %s: %s", db_path, e)
 
     # 2. Search TSV files
     for tsv_path in case.get_all_tsv_files():
@@ -233,7 +233,7 @@ def get_location_history(
                 for row_dict in case.iter_tsv_rows(tsv_path):
                     process_row(row_dict, default_source=source_name)
             except Exception as e:
-                logger.debug("Error reading locations from TSV %s: %s", tsv_path, e)
+                logger.warning("Error reading locations from TSV %s: %s", tsv_path, e)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 

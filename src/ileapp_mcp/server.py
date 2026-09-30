@@ -115,6 +115,7 @@ def get_case_info() -> CaseInfo:
         case_path=str(case_manager.case_path),
         loaded=True,
         total_artifacts=len(all_dbs) + len(all_tsvs),
+        index_truncated=case_manager.index_truncated,
         device_summary=summary,
     )
 
@@ -326,6 +327,7 @@ def get_raw_artifact_data(
     filters: dict[str, str] | None = None,
     limit: int = 50,
     offset: int = 0,
+    exact: bool = False,
 ) -> PaginatedResult[dict[str, Any]]:
     """Query raw tabular data from any specific artifact (e.g. 'Apple_Notes', 'SMS_&_iMessage.db:messages').
 
@@ -334,6 +336,8 @@ def get_raw_artifact_data(
         filters: Key-value filters to match against record fields.
         limit: Page size limit (max 250, default 50).
         offset: Pagination offset.
+        exact: Only accept a TSV export named exactly artifact_name (no substring fallback, which
+            can silently return a different artifact).
     """
     return _get_raw_artifact_data(
         case_manager,
@@ -341,6 +345,7 @@ def get_raw_artifact_data(
         filters=filters,
         limit=limit,
         offset=offset,
+        exact=exact,
     )
 
 

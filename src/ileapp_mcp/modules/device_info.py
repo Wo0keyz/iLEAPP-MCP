@@ -83,7 +83,7 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
                                 if k and v is not None and str(k) not in raw_meta:
                                     raw_meta[str(k).strip()] = str(v).strip()
             except Exception as e:
-                logger.debug("Error inspecting SQLite DB %s for device info: %s", db_path, e)
+                logger.warning("Error inspecting SQLite DB %s for device info: %s", db_path, e)
 
     # 3. Look for HTML report files (especially iLEAPP's primary DeviceInfo.html)
     if case.case_path:
@@ -113,7 +113,7 @@ def get_device_info(case: CaseManager) -> DeviceInfo:
                         if clean_k and clean_v and clean_k not in raw_meta:
                             raw_meta[clean_k] = clean_v
                 except Exception as e:
-                    logger.debug("Error inspecting HTML %s: %s", html_file, e)
+                    logger.warning("Error inspecting HTML %s: %s", html_file, e)
 
     # Helper to find key case-insensitively and tolerating spaces/underscores
     def find_val(*keys: str) -> str | None:

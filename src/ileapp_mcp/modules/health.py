@@ -159,7 +159,7 @@ def get_health_data(
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{tbl}`"):
                         process_row(row_dict, db_path.stem)
             except Exception as e:
-                logger.debug("Error reading health SQLite %s: %s", db_path, e)
+                logger.warning("Error reading health SQLite %s: %s", db_path, e)
 
     # 2. Search TSV files
     for tsv_path in case.get_all_tsv_files():
@@ -169,7 +169,7 @@ def get_health_data(
                 for row_dict in case.iter_tsv_rows(tsv_path):
                     process_row(row_dict, tsv_path.stem)
             except Exception as e:
-                logger.debug("Error reading health TSV %s: %s", tsv_path, e)
+                logger.warning("Error reading health TSV %s: %s", tsv_path, e)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 

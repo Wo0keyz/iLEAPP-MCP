@@ -158,7 +158,7 @@ def get_timeline(
                         next_offset=(offset + limit) if has_more else None,
                     )
         except Exception as e:
-            logger.debug("Error using fast tl.db timeline, falling back to multi-module: %s", e)
+            logger.warning("Error using fast tl.db timeline, falling back to multi-module: %s", e)
 
     # --- FALLBACK PATH: Multi-module unified aggregation ---
     events: list[TimelineEvent] = []
