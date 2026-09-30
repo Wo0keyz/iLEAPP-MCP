@@ -34,7 +34,7 @@ def global_keyword_search(
         artifact_name = tsv_path.stem
         delimiter = "\t" if tsv_path.suffix.lower() == ".tsv" else ","
         try:
-            with open(tsv_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(tsv_path, encoding="utf-8", errors="replace") as f:
                 header_line = f.readline()
                 if not header_line:
                     continue
