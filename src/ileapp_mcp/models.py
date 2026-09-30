@@ -18,6 +18,25 @@ class PaginatedResult(BaseModel, Generic[T]):
     )
 
 
+class Sourced(BaseModel):
+    """Where a record comes from. Filled by the server, never by a caller."""
+
+    evidence_id: str | None = Field(
+        default=None, description="Stable id of the source row (file + table + row number)"
+    )
+    source_file: str | None = Field(
+        default=None, description="Export file the row was read from, relative to the case"
+    )
+    source_table: str | None = Field(default=None, description="SQLite table, if any")
+    row_id: int | str | None = Field(
+        default=None, description="Record number in the TSV, or rowid in the SQLite table"
+    )
+    source_ios_path: str | None = Field(
+        default=None,
+        description="iOS file iLEAPP parsed this artifact from, when iLEAPP recorded it",
+    )
+
+
 class DeviceInfo(BaseModel):
     """Forensic metadata and hardware info of the extracted iOS device."""
 
@@ -36,9 +55,13 @@ class DeviceInfo(BaseModel):
     extraction_date: str | None = Field(
         default=None, description="Date/time when the extraction was generated"
     )
+    sources: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="For each field above, the provenance of the row it was taken from",
+    )
 
 
-class MessageRecord(BaseModel):
+class MessageRecord(Sourced):
     """Forensic record for messages (SMS, iMessage, WhatsApp, Telegram, etc.)."""
 
     timestamp: str | None = Field(default=None, description="Message timestamp in ISO/UTC format")
@@ -58,7 +81,7 @@ class MessageRecord(BaseModel):
     )
 
 
-class CallRecord(BaseModel):
+class CallRecord(Sourced):
     """Forensic record for phone and VoIP calls (Cellular, FaceTime, WhatsApp, etc.)."""
 
     timestamp: str | None = Field(default=None, description="Call start timestamp in ISO format")
@@ -75,7 +98,7 @@ class CallRecord(BaseModel):
     duration_seconds: int | None = Field(default=None, description="Call duration in seconds")
 
 
-class LocationRecord(BaseModel):
+class LocationRecord(Sourced):
     """Forensic record for geographical locations and significant places."""
 
     timestamp: str | None = Field(default=None, description="Timestamp of the location record")
@@ -94,7 +117,7 @@ class LocationRecord(BaseModel):
     )
 
 
-class WebRecord(BaseModel):
+class WebRecord(Sourced):
     """Forensic record for web browsing activity (Safari, Chrome, etc.)."""
 
     timestamp: str | None = Field(default=None, description="Timestamp of the web activity")
@@ -112,7 +135,7 @@ class WebRecord(BaseModel):
     )
 
 
-class AppRecord(BaseModel):
+class AppRecord(Sourced):
     """Forensic record for an installed application or app usage event."""
 
     app_name: str | None = Field(default=None, description="Display name of the application")
@@ -185,7 +208,7 @@ class CaseInfo(BaseModel):
     )
 
 
-class HealthRecord(BaseModel):
+class HealthRecord(Sourced):
     """Forensic record for health and biometric data (Steps, Heart Rate, Workouts, Sleep)."""
 
     timestamp: str | None = Field(default=None, description="Event timestamp in ISO format")
@@ -197,7 +220,7 @@ class HealthRecord(BaseModel):
     )
 
 
-class NoteRecord(BaseModel):
+class NoteRecord(Sourced):
     """Forensic record for Apple Notes, Voice Memos, Reminders, and Calendar events."""
 
     timestamp: str | None = Field(default=None, description="Creation or modification timestamp")
@@ -209,7 +232,7 @@ class NoteRecord(BaseModel):
     )
 
 
-class PhotoRecord(BaseModel):
+class PhotoRecord(Sourced):
     """Forensic record for photos, videos, and media metadata (EXIF)."""
 
     timestamp: str | None = Field(default=None, description="Creation timestamp in ISO format")
@@ -225,7 +248,7 @@ class PhotoRecord(BaseModel):
     )
 
 
-class NetworkRecord(BaseModel):
+class NetworkRecord(Sourced):
     """Forensic record for wireless connections (Wi-Fi, Bluetooth, Cell Towers)."""
 
     timestamp: str | None = Field(default=None, description="Connection or scan timestamp")
@@ -239,7 +262,7 @@ class NetworkRecord(BaseModel):
     )
 
 
-class SystemStateRecord(BaseModel):
+class SystemStateRecord(Sourced):
     """Forensic record for system power state, lock cycles, and KnowledgeC/Biome events."""
 
     timestamp: str | None = Field(default=None, description="Event timestamp in ISO format")

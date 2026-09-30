@@ -1,9 +1,12 @@
 import contextlib
 import csv
+import hashlib
+import json
 import logging
 import os
 import re
 import sqlite3
+import sys
 import tempfile
 import threading
 from collections.abc import Generator
@@ -18,6 +21,49 @@ _RESUME_LAST_CASE = os.environ.get("ILEAPP_MCP_RESUME_LAST_CASE") == "1"
 _STATE_FILE = os.path.join(tempfile.gettempdir(), ".ileapp_mcp_last_case")
 _MAX_FILES_TO_SCAN = 2_000_000  # guard against pointing the server at a filesystem root
 
+csv.field_size_limit(sys.maxsize)  # a long message body must not abort the read of its file
+
+_PLAIN_SELECT = re.compile(r"^SELECT \* FROM `([^`]+)`( LIMIT \d+)?$", re.IGNORECASE)
+# iLEAPP columns that name the iOS file a row was parsed from
+_PROV_COLUMN = re.compile(
+    r"^(source (file|path|database)( location)?|file location|full file path)$", re.IGNORECASE
+)
+
+
+class Row(dict[str, Any]):
+    """A data row plus where it came from: file, table and row number (see evidence_fields)."""
+
+    prov: dict[str, Any]
+
+
+def evidence_id(source_file: str, source_table: str | None, row_id: Any) -> str:
+    """Stable identifier of one row of one file of a case export."""
+    digest = hashlib.sha256(f"{source_file}|{source_table or ''}|{row_id}".encode()).hexdigest()
+    return f"EV-{digest[:12]}"
+
+
+def evidence_fields(row: Any) -> dict[str, Any]:
+    """Provenance of a row read through CaseManager, as the fields of models.Sourced."""
+    prov = getattr(row, "prov", None)
+    if not prov:
+        return {}
+    ios_path = next(
+        (str(v) for k, v in row.items() if v and _PROV_COLUMN.match(str(k))), None
+    ) or prov.get("artifact_ios_path")
+    if ios_path:
+        # iLEAPP writes either a device path or the absolute path of its own working copy
+        # (C:\...\<output>\data\private\var\...): keep the device part only.
+        ios_path = ios_path.replace("\\", "/")
+        in_copy = re.search(r"(?:^|/)data/(private/.*)$", ios_path)
+        ios_path = (in_copy.group(1) if in_copy else ios_path).lstrip("/")
+    return {
+        "evidence_id": evidence_id(prov["source_file"], prov["source_table"], prov["row_id"]),
+        "source_file": prov["source_file"],
+        "source_table": prov["source_table"],
+        "row_id": prov["row_id"],
+        "source_ios_path": ios_path,
+    }
+
 
 class CaseManager:
     """Manages discovery, indexing, and access to an iLEAPP forensic report directory."""
@@ -28,6 +74,7 @@ class CaseManager:
         self._sqlite_dbs: dict[str, Path] = {}
         self._tsv_files: dict[str, Path] = {}
         self._db_connections: dict[str, sqlite3.Connection] = {}
+        self._artifact_ios_source: dict[str, str] = {}
         self._lock = threading.RLock()
         self.is_loaded = False
         self.index_truncated = False
@@ -60,6 +107,7 @@ class CaseManager:
             self.case_path = target_path
             self._report_root = self._find_report_root(target_path)
             self._index_files()
+            self._load_artifact_sources(target_path)
             self.is_loaded = True
             logger.info("Loaded iLEAPP case from %s (root: %s)", target_path, self._report_root)
 
@@ -228,55 +276,48 @@ class CaseManager:
 
     def iter_sqlite_rows(
         self, db_path: Path, query: str, params: tuple[Any, ...] | dict[str, Any] = ()
-    ) -> Generator[dict[str, Any], None, None]:
-        """Yield rows one by one to prevent loading massive tables into memory."""
+    ) -> Generator[Row, None, None]:
+        """Yield rows one by one; each row knows its database, table and rowid."""
         self.validate_readonly_query(query)
         conn = self.get_sqlite_connection(db_path)
+        rel = self._rel(db_path)
+        plain = _PLAIN_SELECT.match(query.strip())
+        table = plain.group(1) if plain else None
         with self._lock:
             cursor = conn.cursor()
-            cursor.execute(query, params)
+            has_rowid = False
+            if plain:
+                try:
+                    cursor.execute(
+                        f"SELECT rowid AS __rowid__, * FROM `{table}`{plain.group(2) or ''}", params
+                    )
+                    has_rowid = True
+                except sqlite3.OperationalError:  # view or WITHOUT ROWID table
+                    cursor.execute(query, params)
+            else:
+                cursor.execute(query, params)
             columns = [d[0] for d in cursor.description] if cursor.description else []
-            for row in cursor:
+            for position, row in enumerate(cursor, start=1):
                 sanitized = []
                 for v in row:
                     if isinstance(v, bytes):
                         sanitized.append(v.hex()[:256] + ("..." if len(v.hex()) > 256 else ""))
                     else:
                         sanitized.append(v)
-                yield dict(zip(columns, sanitized, strict=False))
+                out = Row(zip(columns, sanitized, strict=False))
+                rowid = out.pop("__rowid__", None) if has_rowid else None
+                out.prov = {
+                    "source_file": rel,
+                    "source_table": table,
+                    "row_id": rowid if rowid is not None else position,
+                    # a raw iOS database copied under data/ keeps its device path
+                    "artifact_ios_path": rel[len("data") :] if rel.startswith("data/") else None,
+                }
+                yield out
 
-    def read_tsv_records(
-        self,
-        tsv_path: Path,
-        delimiter: str | None = None,
-    ) -> list[dict[str, str]]:
-        """Parse a TSV or CSV report file into a list of normalized dictionaries."""
-        if not tsv_path.exists():
-            return []
-
-        if delimiter is None:
-            delimiter = "\t" if tsv_path.suffix.lower() == ".tsv" else ","
-
-        encodings = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
-        for enc in encodings:
-            try:
-                with open(tsv_path, encoding=enc, errors="replace") as f:
-                    reader = csv.DictReader(f, delimiter=delimiter)
-                    records: list[dict[str, str]] = []
-                    if reader.fieldnames:
-                        for row in reader:
-                            records.append(
-                                {
-                                    str(k).strip(): str(v).strip()
-                                    for k, v in row.items()
-                                    if k is not None
-                                }
-                            )
-                    return records
-            except Exception as e:
-                logger.debug("Failed reading %s with %s: %s", tsv_path, enc, e)
-                continue
-        return []
+    def read_tsv_records(self, tsv_path: Path, delimiter: str | None = None) -> list[Row]:
+        """Parse a TSV or CSV report file into a list of rows."""
+        return list(self.iter_tsv_rows(tsv_path, delimiter))
 
     def get_all_sqlite_dbs(self) -> list[Path]:
         """Return distinct SQLite database paths discovered."""
@@ -300,30 +341,53 @@ class CaseManager:
 
     def iter_tsv_rows(
         self, tsv_path: Path, delimiter: str | None = None
-    ) -> Generator[dict[str, str], None, None]:
-        """Yield TSV rows one by one with stripped normalized fields."""
+    ) -> Generator[Row, None, None]:
+        """Yield TSV records one by one; each row knows its file and record number."""
         if not tsv_path.exists():
             return
 
         if delimiter is None:
             delimiter = "\t" if tsv_path.suffix.lower() == ".tsv" else ","
 
-        encodings = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
-        for enc in encodings:
-            try:
-                with open(tsv_path, encoding=enc, errors="replace") as f:
-                    reader = csv.DictReader(f, delimiter=delimiter)
-                    for row in reader:
-                        if row is not None:
-                            yield {
-                                str(k).strip(): str(v).strip()
-                                for k, v in row.items()
-                                if k is not None and v is not None
-                            }
-                return
-            except Exception as e:
-                logger.debug("Failed iter_tsv_rows %s with %s: %s", tsv_path, enc, e)
-                continue
+        rel = self._rel(tsv_path)
+        ios_path = self._artifact_ios_source.get(tsv_path.stem.lower())
+        # newline="" lets the csv module handle line breaks inside quoted fields itself
+        with open(tsv_path, encoding="utf-8-sig", errors="replace", newline="") as f:
+            for number, row in enumerate(csv.DictReader(f, delimiter=delimiter), start=1):
+                out = Row(
+                    (str(k).strip(), str(v).strip())
+                    for k, v in row.items()
+                    if k is not None and v is not None
+                )
+                out.prov = {
+                    "source_file": rel,
+                    "source_table": None,
+                    "row_id": number,
+                    "artifact_ios_path": ios_path,
+                }
+                yield out
+
+    def _rel(self, path: Path) -> str:
+        """Path relative to the case directory, as recorded in provenance."""
+        try:
+            return path.resolve().relative_to(self.case_path or path.parent).as_posix()
+        except ValueError:
+            return path.name
+
+    def _load_artifact_sources(self, case_dir: Path) -> None:
+        """Read iLEAPP's own metadata: which iOS file each artifact was parsed from."""
+        self._artifact_ios_source = {}
+        try:
+            with open(case_dir / "_lava_data.lava", encoding="utf-8") as f:
+                groups = json.load(f).get("artifacts", {})
+        except (OSError, ValueError):
+            return
+        for group in groups.values() if isinstance(groups, dict) else []:
+            for artifact in group:
+                source = str(artifact.get("source_path") or "")
+                if "/" in source or "\\" in source:  # not "See Table for Source DB"
+                    name = str(artifact.get("name") or "").lower()
+                    self._artifact_ios_source[name] = source.replace("\\", "/")
 
     @staticmethod
     def validate_readonly_query(query: str) -> None:

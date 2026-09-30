@@ -4,7 +4,7 @@ import math
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import PaginatedResult, PhotoRecord
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,7 @@ def get_photos_metadata(
                     is_deleted=is_del,
                     album_name=album_str,
                     file_path=fpath_str,
+                    **evidence_fields(row),
                 )
             )
 

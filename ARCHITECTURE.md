@@ -107,6 +107,24 @@ L'outil `run_readonly_sql` applique une stratégie de **défense en profondeur**
 
 ---
 
+### 3.7. Provenance des enregistrements (`Sourced`)
+Chaque enregistrement renvoyé par un outil dit d'où il vient. Ces champs sont remplis par le serveur à la lecture de la ligne (`CaseManager.iter_tsv_rows` / `iter_sqlite_rows`), jamais par l'appelant :
+
+| Champ | Contenu |
+| :--- | :--- |
+| `source_file` | fichier d'export lu, relatif au dossier du cas (ex. `_TSV Exports/Signal - Messages.tsv`) |
+| `source_table` | table SQLite, le cas échéant |
+| `row_id` | numéro d'enregistrement dans le TSV (lecture `csv`, donc stable même avec des retours à la ligne dans un champ), ou `rowid` SQLite |
+| `evidence_id` | identifiant stable `EV-…` dérivé des trois champs précédents |
+| `source_ios_path` | fichier iOS d'origine : colonne `Source File` de la ligne si iLEAPP l'a écrite, sinon `source_path` de l'artefact dans `_lava_data.lava`. `null` si iLEAPP ne l'a pas consigné : jamais de chemin inventé |
+
+* Les lignes brutes de `get_raw_artifact_data` portent la même chose sous la clé `_prov` ; `get_raw_artifact_data(exact=True)` refuse toute substitution d'artefact par nom voisin.
+* `get_device_info` et `get_cloud_identities` sont des agrégats : leur champ `sources` indique, pour chaque valeur, la ligne retenue.
+* `get_timeline` reste sans provenance ligne à ligne (événements dérivés de `tl.db`).
+* Test de référence : `tests/test_provenance.py` relit chaque ligne citée sans passer par le code du serveur.
+
+---
+
 ## 🔄 4. Flux Typique d'un Appel MCP
 
 Exemple : Le LLM demande `get_messages(sender="Alice", limit=20)`

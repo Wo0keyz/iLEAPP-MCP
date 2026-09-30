@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields, evidence_id
 from ileapp_mcp.models import ArtifactInfo, PaginatedResult, SqlQueryResult
 
 logger = logging.getLogger(__name__)
@@ -113,6 +113,24 @@ def _truncate_huge_fields(row: dict[str, Any], max_len: int = 1000) -> dict[str,
     return truncated
 
 
+def _with_position_prov(
+    case: CaseManager, db_path: Any, table: str, rows: list[dict[str, Any]], offset: int
+) -> list[dict[str, Any]]:
+    """Raw SQLite rows: provenance is the row's position in the table (no rowid in the query)."""
+    rel = case._rel(db_path)
+    out = []
+    for i, r in enumerate(rows, start=offset + 1):
+        prov = {
+            "evidence_id": evidence_id(rel, table, f"pos{i}"),
+            "source_file": rel,
+            "source_table": table,
+            "row_id": f"pos{i}",
+            "source_ios_path": rel[len("data") :] if rel.startswith("data/") else None,
+        }
+        out.append({**_truncate_huge_fields(r), "_prov": prov})
+    return out
+
+
 def get_raw_artifact_data(
     case: CaseManager,
     artifact_name: str,
@@ -155,7 +173,7 @@ def get_raw_artifact_data(
             )
             has_more = (offset + limit) < total
 
-            safe_rows = [_truncate_huge_fields(r) for r in fetched_rows]
+            safe_rows = _with_position_prov(case, db_path, safe_table, fetched_rows, offset)
 
             return PaginatedResult[dict[str, Any]](
                 items=safe_rows,
@@ -178,7 +196,7 @@ def get_raw_artifact_data(
                 continue
             total += 1
             if len(matched) < offset + limit:
-                matched.append(_truncate_huge_fields(r))
+                matched.append({**_truncate_huge_fields(r), "_prov": evidence_fields(r)})
 
         page = matched[offset : offset + limit]
         has_more = (offset + limit) < total
@@ -217,7 +235,7 @@ def get_raw_artifact_data(
                 )
                 has_more = (offset + limit) < total
 
-                safe_rows = [_truncate_huge_fields(r) for r in fetched_rows]
+                safe_rows = _with_position_prov(case, db_path, safe_artifact, fetched_rows, offset)
 
                 return PaginatedResult[dict[str, Any]](
                     items=safe_rows,

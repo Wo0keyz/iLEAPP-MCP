@@ -4,7 +4,7 @@ import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import PaginatedResult, WebRecord
 
 logger = logging.getLogger(__name__)
@@ -90,6 +90,7 @@ def _normalize_web_record(
         title=title,
         visit_count=visit_count,
         search_term=search_term,
+        **evidence_fields(raw),
     )
 
 

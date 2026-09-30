@@ -3,7 +3,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import CallRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,7 @@ def _normalize_call_record(raw: dict[str, Any], default_app: str = "Cellular") -
         phone_number=number_str,
         contact_name=name_str,
         duration_seconds=duration,
+        **evidence_fields(raw),
     )
 
 

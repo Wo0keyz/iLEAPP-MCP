@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import NoteRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -117,6 +117,7 @@ def get_notes_and_memos(
                     title=title_str,
                     content=content_str,
                     file_path=fpath_str,
+                    **evidence_fields(row),
                 )
             )
 

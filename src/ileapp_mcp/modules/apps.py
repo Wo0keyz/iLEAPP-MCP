@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import AppRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,7 @@ def _normalize_app_record(raw: dict[str, Any]) -> AppRecord:
         developer=str(developer).strip() if developer else None,
         app_path=str(path).strip() if path else None,
         permissions=permissions,
+        **evidence_fields(raw),
     )
 
 

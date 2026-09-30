@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import MessageRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -166,6 +166,7 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
         direction=direction,
         attachment_count=len(attachments),
         attachment_paths=attachments,
+        **evidence_fields(raw),
     )
 
 
@@ -249,6 +250,7 @@ def get_messages(
             or "contact" in stem
             or "group" in stem
             or "biome" in stem
+            or "retention" in stem  # "iOS Message Retention" is a setting, not a conversation
         ):
             continue
         if any(t in stem for t in target_dbs):

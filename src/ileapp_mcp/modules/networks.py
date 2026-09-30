@@ -3,7 +3,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import NetworkRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,7 @@ def get_network_connections(
                     ssid_or_name=name_str,
                     bssid_or_mac=mac_str,
                     duration_seconds=dur_val,
+                    **evidence_fields(row),
                 )
             )
 

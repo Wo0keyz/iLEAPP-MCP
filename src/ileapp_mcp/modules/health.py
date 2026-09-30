@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import HealthRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,7 @@ def get_health_data(
                     value=val_str,
                     unit=unit_str,
                     source_device=source_str,
+                    **evidence_fields(row),
                 )
             )
 

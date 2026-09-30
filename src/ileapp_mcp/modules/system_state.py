@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import PaginatedResult, SystemStateRecord
 
 logger = logging.getLogger(__name__)
@@ -126,6 +126,7 @@ def get_system_state(
                     timestamp=ts_str,
                     event_type=etype,
                     value=val_str,
+                    **evidence_fields(row),
                 )
             )
 

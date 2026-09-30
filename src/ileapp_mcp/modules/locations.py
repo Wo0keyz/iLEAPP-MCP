@@ -4,7 +4,7 @@ import math
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import LocationRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -122,6 +122,7 @@ def _normalize_location_record(raw: dict[str, Any], default_source: str = "GPS")
         horizontal_accuracy=acc,
         source_type=source,
         description=desc,
+        **evidence_fields(raw),
     )
 
 
