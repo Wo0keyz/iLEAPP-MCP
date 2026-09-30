@@ -22,12 +22,12 @@ def _find_field(
         if raw_norm in norm_targets:
             return raw_v
 
-    # Pass 2: Substring match with exclusion of conflicting suffixes
+    # Pass 2: Substring match with exclusion of conflicting patterns
     for raw_k, raw_v in raw.items():
         if raw_v is None or raw_v == "":
             continue
-        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
-        if any(raw_norm.endswith(ex) for ex in exclude_suffixes):
+        raw_norm = re.sub(r"[\s_()-]+", "", str(raw_k).lower())
+        if any(ex in raw_norm for ex in exclude_suffixes):
             continue
         for nt in norm_targets:
             if len(nt) >= 4 and (nt in raw_norm or raw_norm in nt):
@@ -38,7 +38,7 @@ def _find_field(
 def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage") -> MessageRecord:
     """Normalize fields across different iLEAPP message plugins and DB schemas."""
     ts = _find_field(
-        ["Message Date", "Date", "Timestamp", "Delivered Date", "Read Date", "Time"],
+        ["Message Date", "Creation Timestamp", "Date", "Timestamp", "Delivered Date", "Read Date", "Time"],
         raw,
         exclude_suffixes=("id", "text", "body", "sender", "recipient"),
     )
@@ -58,19 +58,23 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
             "sender",
             "recipient",
             "service",
+            "count",
+            "origin",
+            "location",
+            "method",
         ),
     )
     text_str = str(text).strip() if text else None
 
     sender = _find_field(
-        ["Sender ID", "Sender Number", "Chat Sender", "Sender", "From", "Author"],
+        ["Sender Username", "Sender Display Name", "Sender ID", "Sender Number", "Chat Sender", "Sender", "From", "Author"],
         raw,
         exclude_suffixes=("date", "time", "text", "body", "recipient"),
     )
     sender_str = str(sender).strip() if sender else None
 
     recipient = _find_field(
-        ["Recipient ID", "Recipient Number", "Group ID", "Destination", "Recipient", "To"],
+        ["Conversation Participants", "Recipient ID", "Recipient Number", "Conversation With", "Chat Name", "Group ID", "Destination", "Recipient", "To"],
         raw,
         exclude_suffixes=("date", "time", "text", "body", "sender"),
     )
@@ -91,12 +95,20 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
         else:
             direction = v_str
 
+    if direction == "Outgoing":
+        recipient_str = recipient_str or sender_str
+        sender_str = "Owner"
+    elif direction == "Incoming":
+        if not sender_str:
+            sender_str = recipient_str
+        recipient_str = "Owner"
+
     app_raw = _find_field(
-        ["Service", "App", "Source", "Application", "Protocol"],
+        ["Service", "App", "Protocol", "Application"],
         raw,
-        exclude_suffixes=("date", "time", "text", "body"),
+        exclude_suffixes=("date", "time", "text", "body", "database", "db", "source"),
     )
-    app = str(app_raw).strip() if app_raw else default_app
+    app = str(app_raw).strip() if (app_raw and not str(app_raw).endswith((".sqlite", ".db")) and "\\" not in str(app_raw) and "/" not in str(app_raw)) else default_app
 
     attachment_raw = _find_field(
         ["Attachment", "Attachments", "Filename", "File Path", "Media"],
@@ -165,6 +177,8 @@ def get_messages(
             return
 
         msg = _normalize_message_record(r_dict, default_app=db_app)
+        if not msg.message_text and not msg.attachment_paths:
+            return
 
         if sender and (not msg.sender or sender.lower() not in msg.sender.lower()):
             return
@@ -186,7 +200,6 @@ def get_messages(
         if key not in seen:
             seen.add(key)
             total_count += 1
-            # Keep in memory only up to offset + limit to prevent OOM
             filtered.append(msg)
 
     # 1. Search TSV/CSV files (Priority because they are properly joined by iLEAPP plugins)
@@ -197,6 +210,7 @@ def get_messages(
             ("conversation" in stem and "snapchat" not in stem)
             or "contact" in stem
             or "group" in stem
+            or "biome" in stem
         ):
             continue
         if any(t in stem for t in target_dbs):
@@ -220,49 +234,56 @@ def get_messages(
             for row in tsv_rows:
                 process_row(row, default_app)
 
-    # 2. Search SQLite databases (Fallback for unsupported apps, exclude complex CoreData databases)
-    sqlite_dbs = [
-        "sms",
-        "message",
-        "imessage",
-        "whatsapp",
-        "telegram",
-        "chat",
-        "viber",
-        "snapchat",
-        "picaboo",
-    ]
-    for db_path in case.get_all_sqlite_dbs():
-        stem = db_path.stem.lower()
-        if any(t in stem for t in sqlite_dbs):
-            try:
-                conn = case.get_sqlite_connection(db_path)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                )
-                tables = [r[0] for r in cursor.fetchall()]
-                for table in tables:
-                    db_app = "iMessage"
-                    if "whatsapp" in stem or "whatsapp" in table.lower():
-                        db_app = "WhatsApp"
-                    elif "telegram" in stem or "telegram" in table.lower():
-                        db_app = "Telegram"
-                    elif "viber" in stem or "viber" in table.lower():
-                        db_app = "Viber"
-                    elif "snapchat" in stem or "picaboo" in stem:
-                        db_app = "Snapchat"
-                    elif "sms" in stem or "imessage" in stem or "chat" in stem:
-                        db_app = "SMS/iMessage"
-                    elif "zangi" in stem:
-                        db_app = "Zangi"
-                    elif "sms" in stem:
-                        db_app = "SMS/iMessage"
+    # 2. Search SQLite databases (Fallback if TSVs didn't yield enough messages)
+    if len(filtered) == 0:
+        sqlite_dbs = [
+            "sms",
+            "message",
+            "imessage",
+            "whatsapp",
+            "telegram",
+            "chat",
+            "viber",
+            "snapchat",
+            "picaboo",
+        ]
+        for db_path in case.get_all_sqlite_dbs():
+            if len(filtered) >= (offset + limit) * 3:
+                break
+            stem = db_path.stem.lower()
+            if any(t in stem for t in sqlite_dbs):
+                try:
+                    conn = case.get_sqlite_connection(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                    )
+                    tables = [r[0] for r in cursor.fetchall()]
+                    for table in tables:
+                        if len(filtered) >= (offset + limit) * 3:
+                            break
+                        db_app = "iMessage"
+                        if "whatsapp" in stem or "whatsapp" in table.lower():
+                            db_app = "WhatsApp"
+                        elif "telegram" in stem or "telegram" in table.lower():
+                            db_app = "Telegram"
+                        elif "viber" in stem or "viber" in table.lower():
+                            db_app = "Viber"
+                        elif "snapchat" in stem or "picaboo" in stem:
+                            db_app = "Snapchat"
+                        elif "sms" in stem or "imessage" in stem or "chat" in stem:
+                            db_app = "SMS/iMessage"
+                        elif "zangi" in stem:
+                            db_app = "Zangi"
+                        elif "sms" in stem:
+                            db_app = "SMS/iMessage"
 
-                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
-                        process_row(row_dict, db_app)
-            except Exception as e:
-                logger.debug("Error querying SQLite messages from %s: %s", db_path, e)
+                        for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
+                            process_row(row_dict, db_app)
+                            if len(filtered) >= (offset + limit) * 3:
+                                break
+                except Exception as e:
+                    logger.debug("Error querying SQLite messages from %s: %s", db_path, e)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 

@@ -48,6 +48,9 @@ class CaseManager:
             if not target_path.exists() or not target_path.is_dir():
                 raise ValueError(f"Target path does not exist or is not a directory: {target_path}")
 
+            if self.is_loaded and self.case_path == target_path:
+                return True
+
             self._close_connections()
             self.case_path = target_path
             self._report_root = self._find_report_root(target_path)
@@ -94,6 +97,23 @@ class CaseManager:
         if not self._report_root or not self._report_root.exists():
             return
 
+        import hashlib
+        import pickle
+        import tempfile
+
+        cache_key = hashlib.md5(str(self._report_root).encode()).hexdigest()
+        cache_file = Path(tempfile.gettempdir()) / f".ileapp_index_{cache_key}.pkl"
+
+        if cache_file.exists():
+            try:
+                with open(cache_file, "rb") as f:
+                    cached_dbs, cached_tsvs = pickle.load(f)
+                    self._sqlite_dbs = cached_dbs
+                    self._tsv_files = cached_tsvs
+                    return
+            except Exception:
+                pass
+
         file_count = 0
         max_files_to_scan = 50000  # Prevent DoS on massive root directories
         for p in self._report_root.rglob("*"):
@@ -118,6 +138,12 @@ class CaseManager:
                 stem = p.stem.lower()
                 self._tsv_files[stem] = p
                 self._tsv_files[rel_name.lower()] = p
+
+        try:
+            with open(cache_file, "wb") as f:
+                pickle.dump((self._sqlite_dbs, self._tsv_files), f)
+        except Exception:
+            pass
 
     def get_sqlite_path(self, name_hint: str) -> Path | None:
         """Find a SQLite database path by name hint or pattern."""

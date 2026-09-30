@@ -29,37 +29,45 @@ def global_keyword_search(
     total_count = 0
     filtered: list[SearchHit] = []
 
-    # Fast path: search through all TSV files (which are iLEAPP's unified text exports)
+    # Fast path: search through all TSV files with streaming line inspection
     for tsv_path in case.get_all_tsv_files():
         artifact_name = tsv_path.stem
+        delimiter = "\t" if tsv_path.suffix.lower() == ".tsv" else ","
         try:
-            for row in case.read_tsv_records(tsv_path):
-                # Check if keyword in any string value
-                match_found = False
-                matched_text = ""
-                for _k, v in row.items():
-                    if v and isinstance(v, str) and kw_lower in v.lower():
-                        match_found = True
-                        # Snippet extraction
-                        idx = v.lower().find(kw_lower)
-                        start = max(0, idx - 40)
-                        end = min(len(v), idx + len(keyword) + 40)
-                        matched_text = (
-                            ("..." if start > 0 else "")
-                            + v[start:end]
-                            + ("..." if end < len(v) else "")
-                        )
-                        break
-
-                if match_found:
-                    total_count += 1
-                    filtered.append(
-                        SearchHit(
-                            artifact_name=artifact_name,
-                            matched_text=matched_text.strip(),
-                            row_data=row,
-                        )
-                    )
+            with open(tsv_path, "r", encoding="utf-8", errors="replace") as f:
+                header_line = f.readline()
+                if not header_line:
+                    continue
+                headers = [h.strip() for h in header_line.rstrip("\r\n").split(delimiter)]
+                for line in f:
+                    if kw_lower in line.lower():
+                        values = line.rstrip("\r\n").split(delimiter)
+                        row = dict(zip(headers, values, strict=False))
+                        match_found = False
+                        matched_text = ""
+                        for _k, v in row.items():
+                            if v and isinstance(v, str) and kw_lower in v.lower():
+                                match_found = True
+                                idx = v.lower().find(kw_lower)
+                                start = max(0, idx - 40)
+                                end = min(len(v), idx + len(keyword) + 40)
+                                matched_text = (
+                                    ("..." if start > 0 else "")
+                                    + v[start:end]
+                                    + ("..." if end < len(v) else "")
+                                )
+                                break
+                        if match_found:
+                            total_count += 1
+                            filtered.append(
+                                SearchHit(
+                                    artifact_name=artifact_name,
+                                    matched_text=matched_text.strip(),
+                                    row_data=row,
+                                )
+                            )
+                            if len(filtered) >= (offset + limit) * 3:
+                                break
         except Exception:
             pass
 

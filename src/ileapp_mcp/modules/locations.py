@@ -207,6 +207,10 @@ def get_location_history(
                 for table in tables:
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
                         process_row(row_dict, default_source=source_name)
+                        if not (latitude and longitude and radius_km) and not start_date and not end_date and len(filtered) >= 150:
+                            break
+                    if not (latitude and longitude and radius_km) and not start_date and not end_date and len(filtered) >= 150:
+                        break
             except Exception as e:
                 logger.debug("Error reading locations from SQLite %s: %s", db_path, e)
 
