@@ -78,6 +78,8 @@ class CaseManager:
         self._lock = threading.RLock()
         self.is_loaded = False
         self.index_truncated = False
+        # Files that could not be read since the last check (see server._fail_on_read_errors)
+        self.read_errors: list[str] = []
 
         if case_dir:
             self.load_case(case_dir)
@@ -170,11 +172,14 @@ class CaseManager:
             suffix = p.suffix.lower()
             rel_name = p.name
 
+            raw = self._is_raw(p)
             if suffix in {".db", ".sqlite", ".sqlite3"}:
-                stem = p.stem.lower()
-                self._sqlite_dbs[stem] = p
-                self._sqlite_dbs[rel_name.lower()] = p
-            elif suffix in {".tsv", ".csv"}:
+                # a raw iOS database never shadows a report-level one of the same name
+                for key in (p.stem.lower(), rel_name.lower()):
+                    if not raw or key not in self._sqlite_dbs:
+                        self._sqlite_dbs[key] = p
+            elif suffix in {".tsv", ".csv"} and not raw:
+                # CSV/TSV files of the device itself (under data/) are not iLEAPP exports
                 stem = p.stem.lower()
                 self._tsv_files[stem] = p
                 self._tsv_files[rel_name.lower()] = p
@@ -283,7 +288,7 @@ class CaseManager:
         rel = self._rel(db_path)
         plain = _PLAIN_SELECT.match(query.strip())
         table = plain.group(1) if plain else None
-        with self._lock:
+        with self._lock, self._recording(rel):
             cursor = conn.cursor()
             has_rowid = False
             if plain:
@@ -327,12 +332,7 @@ class CaseManager:
     def get_report_sqlite_dbs(self) -> list[Path]:
         """SQLite databases produced by the report tool, excluding the raw iOS files under data/."""
         with self._lock:
-            root = self.case_path
-            return [
-                p
-                for p in sorted(set(self._sqlite_dbs.values()))
-                if root is None or p.relative_to(root).parts[:1] != ("data",)
-            ]
+            return [p for p in sorted(set(self._sqlite_dbs.values())) if not self._is_raw(p)]
 
     def get_all_tsv_files(self) -> list[Path]:
         """Return distinct TSV/CSV file paths discovered."""
@@ -342,9 +342,11 @@ class CaseManager:
     def iter_tsv_rows(
         self, tsv_path: Path, delimiter: str | None = None
     ) -> Generator[Row, None, None]:
-        """Yield TSV records one by one; each row knows its file and record number."""
-        if not tsv_path.exists():
-            return
+        """Yield TSV records one by one; each row knows its file and record number.
+
+        A missing, unreadable or malformed file raises and is recorded in read_errors:
+        an export that cannot be read must never look like an empty one.
+        """
 
         if delimiter is None:
             delimiter = "\t" if tsv_path.suffix.lower() == ".tsv" else ","
@@ -352,20 +354,41 @@ class CaseManager:
         rel = self._rel(tsv_path)
         ios_path = self._artifact_ios_source.get(tsv_path.stem.lower())
         # newline="" lets the csv module handle line breaks inside quoted fields itself
-        with open(tsv_path, encoding="utf-8-sig", errors="replace", newline="") as f:
-            for number, row in enumerate(csv.DictReader(f, delimiter=delimiter), start=1):
-                out = Row(
-                    (str(k).strip(), str(v).strip())
-                    for k, v in row.items()
-                    if k is not None and v is not None
-                )
-                out.prov = {
-                    "source_file": rel,
-                    "source_table": None,
-                    "row_id": number,
-                    "artifact_ios_path": ios_path,
-                }
-                yield out
+        try:
+            with open(tsv_path, encoding="utf-8-sig", errors="replace", newline="") as f:
+                reader = csv.DictReader(f, delimiter=delimiter, strict=True)
+                for number, row in enumerate(reader, start=1):
+                    out = Row(
+                        (str(k).strip(), str(v).strip())
+                        for k, v in row.items()
+                        if k is not None and v is not None
+                    )
+                    out.prov = {
+                        "source_file": rel,
+                        "source_table": None,
+                        "row_id": number,
+                        "artifact_ios_path": ios_path,
+                    }
+                    yield out
+        except (csv.Error, OSError) as e:
+            self.read_errors.append(f"{rel}: {e}")
+            raise
+
+    @contextlib.contextmanager
+    def _recording(self, rel: str) -> Generator[None, None, None]:
+        """Record a database read failure in read_errors, then let it propagate."""
+        try:
+            yield
+        except sqlite3.Error as e:
+            self.read_errors.append(f"{rel}: {e}")
+            raise
+
+    def _is_raw(self, path: Path) -> bool:
+        """True for a file of the device copy (any data/ directory inside the case)."""
+        try:
+            return "data" in path.relative_to(self.case_path or path.parent).parts[:-1]
+        except ValueError:
+            return False
 
     def _rel(self, path: Path) -> str:
         """Path relative to the case directory, as recorded in provenance."""

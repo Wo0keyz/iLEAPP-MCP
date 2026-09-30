@@ -202,12 +202,13 @@ def get_messages(
         "snapchat",
     ]
 
-    seen = set()
+    exported: set[tuple[str, str, str]] = set()  # messages already served by a TSV export
     filtered: list[MessageRecord] = []
     total_count = 0
+    skipped_empty = 0
 
     def process_row(r_dict: dict[str, Any], db_app: str, from_export: bool) -> None:
-        nonlocal total_count
+        nonlocal total_count, skipped_empty
 
         # Quick pre-filter if it's clearly not matching app
         if app.lower() != "all" and app.lower() not in db_app.lower():
@@ -215,6 +216,7 @@ def get_messages(
 
         msg = _normalize_message_record(r_dict, default_app=db_app)
         if not msg.message_text and not msg.attachment_paths:
+            skipped_empty += 1  # reported to the caller: a row without content is not a message
             return
 
         if sender and (not msg.sender or sender.lower() not in msg.sender.lower()):
@@ -236,10 +238,12 @@ def get_messages(
         # Every row of an iLEAPP export is kept: two identical texts sent in the same second are
         # two messages. Only database rows that repeat an already exported message are dropped.
         key = (msg.timestamp or "", msg.sender or "", msg.message_text or "")
-        if from_export or key not in seen:
-            seen.add(key)
-            total_count += 1
-            filtered.append(msg)
+        if from_export:
+            exported.add(key)
+        elif key in exported:
+            return
+        total_count += 1
+        filtered.append(msg)
 
     # 1. Search TSV/CSV files (Priority because they are properly joined by iLEAPP plugins)
     for tsv_path in case.get_all_tsv_files():
@@ -251,6 +255,7 @@ def get_messages(
             or "group" in stem
             or "biome" in stem
             or "retention" in stem  # "iOS Message Retention" is a setting, not a conversation
+            or "email" in stem  # mail has its own artifacts ("Apple Email - Message Headers")
         ):
             continue
         if any(t in stem for t in target_dbs):
@@ -333,4 +338,5 @@ def get_messages(
         limit=limit,
         offset=offset,
         next_offset=next_offset,
+        skipped_empty=skipped_empty,
     )

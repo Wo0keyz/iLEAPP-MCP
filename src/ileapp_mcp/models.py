@@ -16,6 +16,10 @@ class PaginatedResult(BaseModel, Generic[T]):
     next_offset: int | None = Field(
         default=None, description="Offset to use for the next page, or None if last page"
     )
+    skipped_empty: int = Field(
+        default=0,
+        description="Rows read but not returned because they carry no content (not in total_count)",
+    )
 
 
 class Sourced(BaseModel):
