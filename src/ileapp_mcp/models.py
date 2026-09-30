@@ -39,6 +39,10 @@ class Sourced(BaseModel):
         default=None,
         description="iOS file iLEAPP parsed this artifact from, when iLEAPP recorded it",
     )
+    row_digest: str | None = Field(
+        default=None,
+        description="SHA-256 prefix of the source row's content (detects a changed row)",
+    )
 
 
 class DeviceInfo(BaseModel):

@@ -113,3 +113,19 @@ def test_identical_messages_in_one_export_are_both_kept(tmp_path: Path) -> None:
     twice = SIGNAL_TSV + "2030-01-01 10:00:00\tA\thello signal\n"
     case = _case(tmp_path, {"Signal - Messages.tsv": twice}, {})
     assert get_messages(case).total_count == 2
+
+
+def test_sms_export_columns_are_not_misread(tmp_path: Path) -> None:
+    """Real iLEAPP SMS header: 'From Me' is a flag, 'Attachment Count'-like columns are not files."""
+    header = "Message Timestamp\tFrom Me\tChat Contact ID\tMessage\tAttachment File\tService\tMessage Direction\tAttachment Size (Bytes)\n"
+    rows = (
+        "2030-01-01 10:00:00\t0\t+33600000001\thello\t\tSMS\tIncoming\t0\n"
+        "2030-01-01 10:01:00\t1\t+33600000001\thi back\t\tSMS\tOutgoing\t0\n"
+        "\t0\t+33600000001\tno timestamp on this one\t\tSMS\tIncoming\t0\n"
+    )
+    case = _case(tmp_path, {"SMS.tsv": header + rows}, {})
+    incoming, outgoing, undated = sorted(get_messages(case).items, key=lambda m: m.row_id or 0)
+    assert (incoming.sender, incoming.recipient) == ("+33600000001", "Owner")
+    assert (outgoing.sender, outgoing.recipient) == ("Owner", "+33600000001")
+    assert all(m.attachment_count == 0 and m.attachment_paths == [] for m in (incoming, outgoing))
+    assert undated.timestamp is None and undated.message_text == "no timestamp on this one"

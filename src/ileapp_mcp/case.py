@@ -30,6 +30,9 @@ _PROV_COLUMN = re.compile(
 )
 
 
+_FILE_NAME = re.compile(r"^[\w.\-]+\.\w{2,12}$")
+
+
 class Row(dict[str, Any]):
     """A data row plus where it came from: file, table and row number (see evidence_fields)."""
 
@@ -56,12 +59,15 @@ def evidence_fields(row: Any) -> dict[str, Any]:
         ios_path = ios_path.replace("\\", "/")
         in_copy = re.search(r"(?:^|/)data/(private/.*)$", ios_path)
         ios_path = (in_copy.group(1) if in_copy else ios_path).lstrip("/")
+    content = "\x1f".join(f"{k}={v}" for k, v in row.items())
     return {
         "evidence_id": evidence_id(prov["source_file"], prov["source_table"], prov["row_id"]),
         "source_file": prov["source_file"],
         "source_table": prov["source_table"],
         "row_id": prov["row_id"],
         "source_ios_path": ios_path,
+        # evidence_id names a position; the digest binds it to what the row contained
+        "row_digest": hashlib.sha256(content.encode()).hexdigest()[:16],
     }
 
 
@@ -355,9 +361,12 @@ class CaseManager:
         ios_path = self._artifact_ios_source.get(tsv_path.stem.lower())
         # newline="" lets the csv module handle line breaks inside quoted fields itself
         try:
-            with open(tsv_path, encoding="utf-8-sig", errors="replace", newline="") as f:
+            # errors="strict": bytes that are not UTF-8 must fail the read, not be rewritten
+            with open(tsv_path, encoding="utf-8-sig", errors="strict", newline="") as f:
                 reader = csv.DictReader(f, delimiter=delimiter, strict=True)
                 for number, row in enumerate(reader, start=1):
+                    if None in row:
+                        raise csv.Error(f"record {number} has more fields than the header")
                     out = Row(
                         (str(k).strip(), str(v).strip())
                         for k, v in row.items()
@@ -370,7 +379,7 @@ class CaseManager:
                         "artifact_ios_path": ios_path,
                     }
                     yield out
-        except (csv.Error, OSError) as e:
+        except (csv.Error, OSError, UnicodeError) as e:
             self.read_errors.append(f"{rel}: {e}")
             raise
 
@@ -408,7 +417,8 @@ class CaseManager:
         for group in groups.values() if isinstance(groups, dict) else []:
             for artifact in group:
                 source = str(artifact.get("source_path") or "")
-                if "/" in source or "\\" in source:  # not "See Table for Source DB"
+                # a path or a bare file name, not a phrase such as "See Table for Source DB"
+                if "/" in source or "\\" in source or _FILE_NAME.match(source):
                     name = str(artifact.get("name") or "").lower()
                     self._artifact_ios_source[name] = source.replace("\\", "/")
 

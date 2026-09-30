@@ -94,3 +94,17 @@ def test_rows_without_content_are_counted_not_hidden(tmp_path: Path) -> None:
     )
     res = get_messages(_load(tmp_path))
     assert (res.total_count, res.skipped_empty) == (1, 1)
+
+
+def test_invalid_utf8_is_an_error_not_a_silent_rewrite(tmp_path: Path) -> None:
+    (tmp_path / "Notes.tsv").write_bytes(b"Title\tContent\nliste\tcaf\xe9 noir\n")  # latin-1 byte
+    with pytest.raises(UnicodeError):
+        get_raw_artifact_data(_load(tmp_path), "Notes", exact=True)
+
+
+def test_row_with_more_fields_than_the_header_is_an_error(tmp_path: Path) -> None:
+    (tmp_path / "Notes.tsv").write_text(
+        "Title\tContent\nliste\tpain\tvaleur en trop\n", encoding="utf-8"
+    )
+    with pytest.raises(csv.Error, match="more fields than the header"):
+        get_raw_artifact_data(_load(tmp_path), "Notes", exact=True)

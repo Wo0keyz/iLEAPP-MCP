@@ -30,7 +30,9 @@ def _find_field(
         if any(ex in raw_norm for ex in exclude_suffixes):
             continue
         for nt in norm_targets:
-            if len(nt) >= 4 and (nt in raw_norm or raw_norm in nt):
+            # The column name must contain the alias, never the reverse: a "Message" column is
+            # not a "Message Date".
+            if len(nt) >= 4 and nt in raw_norm:
                 return raw_v
     return None
 
@@ -86,7 +88,8 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
             "Author",
         ],
         raw,
-        exclude_suffixes=("date", "time", "text", "body", "recipient"),
+        # "From Me" is a direction flag (0/1), not a sender
+        exclude_suffixes=("date", "time", "text", "body", "recipient", "fromme"),
     )
     sender_str = str(sender).strip() if sender else None
 
@@ -97,6 +100,7 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
             "Recipient Number",
             "Conversation With",
             "Chat Name",
+            "Chat Contact ID",
             "Group ID",
             "Destination",
             "Recipient",
@@ -147,9 +151,10 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
     )
 
     attachment_raw = _find_field(
-        ["Attachment", "Attachments", "Filename", "File Path", "Media"],
+        ["Attachment File", "Attachment", "Attachments", "Filename", "File Path", "Media"],
         raw,
-        exclude_suffixes=("date", "time", "text", "body"),
+        # "Attachment Count" / "Attachment Size" describe an attachment, they are not one
+        exclude_suffixes=("date", "time", "text", "body", "count", "size", "mimetype", "name"),
     )
     attachments: list[str] = []
     if attachment_raw:

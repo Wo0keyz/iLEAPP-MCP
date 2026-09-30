@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from ileapp_mcp.case import CaseManager, evidence_fields, evidence_id
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import ArtifactInfo, PaginatedResult, SqlQueryResult
 
 logger = logging.getLogger(__name__)
@@ -113,22 +113,36 @@ def _truncate_huge_fields(row: dict[str, Any], max_len: int = 1000) -> dict[str,
     return truncated
 
 
-def _with_position_prov(
-    case: CaseManager, db_path: Any, table: str, rows: list[dict[str, Any]], offset: int
-) -> list[dict[str, Any]]:
-    """Raw SQLite rows: provenance is the row's position in the table (no rowid in the query)."""
-    rel = case._rel(db_path)
-    out = []
-    for i, r in enumerate(rows, start=offset + 1):
-        prov = {
-            "evidence_id": evidence_id(rel, table, f"pos{i}"),
-            "source_file": rel,
-            "source_table": table,
-            "row_id": f"pos{i}",
-            "source_ios_path": rel[len("data") :] if rel.startswith("data/") else None,
-        }
-        out.append({**_truncate_huge_fields(r), "_prov": prov})
-    return out
+def _sqlite_table_page(
+    case: CaseManager,
+    db_path: Any,
+    table: str,
+    filters: dict[str, str],
+    limit: int,
+    offset: int,
+) -> PaginatedResult[dict[str, Any]]:
+    """One page of a SQLite table. Provenance is the row's rowid, whatever the filter.
+
+    The filter is applied here on rows that already carry their rowid, so the same row always
+    gets the same evidence_id (a position in a filtered result would change with the filter).
+    """
+    page: list[dict[str, Any]] = []
+    total = 0
+    for row in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
+        if not all(k in row and str(v).lower() in str(row[k]).lower() for k, v in filters.items()):
+            continue
+        total += 1
+        if offset < total <= offset + limit:
+            page.append({**_truncate_huge_fields(row), "_prov": evidence_fields(row)})
+    has_more = (offset + limit) < total
+    return PaginatedResult[dict[str, Any]](
+        items=page,
+        total_count=total,
+        has_more=has_more,
+        limit=limit,
+        offset=offset,
+        next_offset=(offset + limit) if has_more else None,
+    )
 
 
 def get_raw_artifact_data(
@@ -157,32 +171,7 @@ def get_raw_artifact_data(
         db_path = case.get_sqlite_path(db_part)
         if db_path:
             safe_table = table_part.replace("`", "").replace("'", "")
-            where_sql = ""
-            params: list[Any] = []
-            if filters:
-                clauses = []
-                for k, v in filters.items():
-                    safe_col = k.replace("`", "").replace("'", "")
-                    clauses.append(f"`{safe_col}` LIKE ?")
-                    params.append(f"%{v}%")
-                where_sql = f" WHERE {' AND '.join(clauses)}"
-
-            query = f"SELECT * FROM `{safe_table}`{where_sql}"
-            cols, fetched_rows, total = case.query_sqlite(
-                db_path, query, params=tuple(params), limit=limit, offset=offset
-            )
-            has_more = (offset + limit) < total
-
-            safe_rows = _with_position_prov(case, db_path, safe_table, fetched_rows, offset)
-
-            return PaginatedResult[dict[str, Any]](
-                items=safe_rows,
-                total_count=total,
-                has_more=has_more,
-                limit=limit,
-                offset=offset,
-                next_offset=(offset + limit) if has_more else None,
-            )
+            return _sqlite_table_page(case, db_path, safe_table, filters, limit, offset)
 
     # 2. Try TSV file match
     tsv_path = case.get_tsv_path(artifact_name, exact=exact)
@@ -219,32 +208,7 @@ def get_raw_artifact_data(
             )
             if cursor.fetchone():
                 safe_artifact = artifact_name.replace("`", "").replace("'", "")
-                where_sql = ""
-                params = []
-                if filters:
-                    clauses = []
-                    for k, v in filters.items():
-                        safe_col = k.replace("`", "").replace("'", "")
-                        clauses.append(f"`{safe_col}` LIKE ?")
-                        params.append(f"%{v}%")
-                    where_sql = f" WHERE {' AND '.join(clauses)}"
-
-                query = f"SELECT * FROM `{safe_artifact}`{where_sql}"
-                cols, fetched_rows, total = case.query_sqlite(
-                    db_path, query, params=tuple(params), limit=limit, offset=offset
-                )
-                has_more = (offset + limit) < total
-
-                safe_rows = _with_position_prov(case, db_path, safe_artifact, fetched_rows, offset)
-
-                return PaginatedResult[dict[str, Any]](
-                    items=safe_rows,
-                    total_count=total,
-                    has_more=has_more,
-                    limit=limit,
-                    offset=offset,
-                    next_offset=(offset + limit) if has_more else None,
-                )
+                return _sqlite_table_page(case, db_path, safe_artifact, filters, limit, offset)
         except Exception:
             pass
 

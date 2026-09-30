@@ -152,3 +152,34 @@ def test_multiline_field_keeps_record_numbers(tmp_path: Path) -> None:
     hit = global_keyword_search(case, "second").items[0]
     assert hit.row_id == 2
     case.close()
+
+
+def test_sqlite_row_provenance_does_not_depend_on_the_filter(tmp_path: Path) -> None:
+    conn = sqlite3.connect(tmp_path / "notes.db")
+    conn.execute("CREATE TABLE msgs (id INTEGER PRIMARY KEY, body TEXT)")
+    conn.executemany(
+        "INSERT INTO msgs VALUES (?, ?)", [(10, "alpha"), (20, "bravo"), (30, "charlie")]
+    )
+    conn.commit()
+    conn.close()
+    case = CaseManager()
+    case.load_case(tmp_path)
+    everything = get_raw_artifact_data(case, "notes:msgs").items
+    filtered = get_raw_artifact_data(case, "notes:msgs", filters={"body": "bravo"}).items
+    bravo = next(r for r in everything if r["body"] == "bravo")
+    assert filtered[0]["_prov"] == bravo["_prov"] and bravo["_prov"]["row_id"] == 20
+    assert len({r["_prov"]["evidence_id"] for r in everything}) == 3
+    case.close()
+
+
+def test_row_digest_changes_when_the_row_changes(tmp_path: Path) -> None:
+    path = tmp_path / "Notes.tsv"
+    path.write_text("Title\tContent\nliste\tacheter du pain\n", encoding="utf-8")
+    case = CaseManager()
+    case.load_case(tmp_path)
+    before = get_raw_artifact_data(case, "Notes", exact=True).items[0]["_prov"]
+    path.write_text("Title\tContent\nliste\tacheter du vin\n", encoding="utf-8")
+    after = get_raw_artifact_data(case, "Notes", exact=True).items[0]["_prov"]
+    assert before["evidence_id"] == after["evidence_id"]  # same position
+    assert before["row_digest"] != after["row_digest"]  # different content
+    case.close()
