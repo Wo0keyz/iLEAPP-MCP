@@ -536,12 +536,18 @@ def global_keyword_search(
 @_fail_on_read_errors
 def get_file_attachment(
     file_name: str,
-) -> FileInfo | None:
-    """Search for a specific file/attachment within the extracted iLEAPP directory by its name (e.g. 'Astronautica_Sanitized.pdf' or 'data.py').
-    Returns file absolute path, SHA256 hash, size, and a preview of the content if it is text."""
+    path: str | None = None,
+    max_chars: int = 20000,
+    offset: int = 0,
+) -> FileInfo:
+    """Read a file of the extraction (e.g. a message attachment) whose name is exactly file_name.
+
+    Returns its provenance (evidence_id, path in the case and on the device), SHA-256, size and its
+    text (plain text, PDF, DOCX), from `offset`, at most `max_chars` characters. If several files
+    share the name, the error lists their paths: call again with `path` to choose one.
+    """
     return _get_file_attachment(
-        case=case_manager,
-        file_name=file_name,
+        case=case_manager, file_name=file_name, path=path, max_chars=max_chars, offset=offset
     )
 
 

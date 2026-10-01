@@ -52,6 +52,9 @@ dev = [
     "mypy>=1.10.0",
     "build>=1.2.0",
 ]
+documents = [
+    "pypdf>=5",
+]
 
 [project.scripts]
 ileapp-mcp = "ileapp_mcp.cli:main"
