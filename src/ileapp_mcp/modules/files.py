@@ -27,9 +27,16 @@ class FileInfo(Sourced):
     note: str | None = Field(default=None, description="Why no text was extracted, if none was")
 
 
-def _docx_text(path: Path) -> str:
+# Text is extracted in memory: above this size (file, or unpacked DOCX body) only the fingerprint is given.
+MAX_TEXT_BYTES = 20 * 1024 * 1024
+
+
+def _docx_text(path: Path) -> str | None:
     with zipfile.ZipFile(path) as z:
-        xml = z.read("word/document.xml").decode("utf-8")
+        if z.getinfo("word/document.xml").file_size > MAX_TEXT_BYTES:  # zip bomb
+            return None
+        with z.open("word/document.xml") as body:
+            xml = body.read(MAX_TEXT_BYTES + 1).decode("utf-8")
     xml = re.sub(r"</w:p>", "\n", xml)
     return html.unescape(re.sub(r"<[^>]+>", "", xml)).strip()
 
@@ -45,6 +52,8 @@ def _pdf_text(path: Path) -> str | None:
 def _extract_text(path: Path) -> tuple[str, str | None, str | None]:
     """(kind, text or None, note)."""
     suffix = path.suffix.lower()
+    if path.stat().st_size > MAX_TEXT_BYTES:
+        return "binary", None, f"file larger than {MAX_TEXT_BYTES} bytes: text not extracted"
     if suffix == ".pdf":
         text = _pdf_text(path)
         if text is None:
@@ -55,7 +64,8 @@ def _extract_text(path: Path) -> tuple[str, str | None, str | None]:
             None if text else "PDF without a text layer (scanned image?): OCR needed",
         )
     if suffix == ".docx":
-        return "docx", _docx_text(path), None
+        text = _docx_text(path)
+        return "docx", text, None if text is not None else "DOCX body too large once unpacked: text not extracted"
     data = path.read_bytes()
     if b"\x00" in data[:8192]:
         return "binary", None, "binary file: no text"
@@ -99,7 +109,8 @@ def get_file_attachment(
     if not full.resolve().is_relative_to(root):  # symlink leading out of the case
         raise PermissionError(f"{full} points outside the case directory")
     rel = full.relative_to(root).as_posix()
-    sha = hashlib.sha256(full.read_bytes()).hexdigest()
+    with full.open("rb") as fh:
+        sha = hashlib.file_digest(fh, "sha256").hexdigest()
     kind, text, note = _extract_text(full)
     max_chars = max(1, min(max_chars, 100000))
     offset = max(0, offset)

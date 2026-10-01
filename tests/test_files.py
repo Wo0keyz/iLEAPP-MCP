@@ -61,3 +61,17 @@ def test_text_is_paged(case: CaseManager) -> None:
 def test_plist_decoding_stays_inside_the_case(case: CaseManager) -> None:
     with pytest.raises(PermissionError):
         decode_plist(case, "../../../etc/passwd")
+
+
+def test_oversized_text_and_docx_bomb_are_not_unpacked(case: CaseManager, monkeypatch) -> None:
+    from ileapp_mcp.modules import files
+
+    monkeypatch.setattr(files, "MAX_TEXT_BYTES", 1000)
+    app = case.case_path / "data/private/var/mobile/Containers/Shared/AppGroup/X/file/a"
+    (app / "big.txt").write_text("x" * 2000, encoding="utf-8")
+    with zipfile.ZipFile(app / "bomb.docx", "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("word/document.xml", "<w:p>" + "a" * 5000 + "</w:p>")
+    big = get_file_attachment(case, "big.txt")
+    assert big.text is None and big.size_bytes == 2000 and len(big.sha256) == 64
+    bomb = get_file_attachment(case, "bomb.docx")
+    assert bomb.text is None and "too large" in bomb.note
