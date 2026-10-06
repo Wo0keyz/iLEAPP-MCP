@@ -65,7 +65,11 @@ def _extract_text(path: Path) -> tuple[str, str | None, str | None]:
         )
     if suffix == ".docx":
         text = _docx_text(path)
-        return "docx", text, None if text is not None else "DOCX body too large once unpacked: text not extracted"
+        return (
+            "docx",
+            text,
+            None if text is not None else "DOCX body too large once unpacked: text not extracted",
+        )
     data = path.read_bytes()
     if b"\x00" in data[:8192]:
         return "binary", None, "binary file: no text"
@@ -109,8 +113,11 @@ def get_file_attachment(
     if not full.resolve().is_relative_to(root):  # symlink leading out of the case
         raise PermissionError(f"{full} points outside the case directory")
     rel = full.relative_to(root).as_posix()
-    with full.open("rb") as fh:
-        sha = hashlib.file_digest(fh, "sha256").hexdigest()
+    digest = hashlib.sha256()
+    with full.open("rb") as fh:  # hashlib.file_digest n'existe qu'à partir de Python 3.11
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    sha = digest.hexdigest()
     kind, text, note = _extract_text(full)
     max_chars = max(1, min(max_chars, 100000))
     offset = max(0, offset)
@@ -154,9 +161,9 @@ def decode_plist(case: CaseManager, relative_path: str) -> dict[str, Any] | str:
         raise PermissionError(f"{relative_path} is outside the case directory")
     if not full_path.exists() or not full_path.is_file():
         # Try finding it globally
-        for root, _dirs, files in os.walk(str(case.case_path)):
+        for dirpath, _dirs, files in os.walk(str(case.case_path)):
             if relative_path in files:
-                full_path = Path(root) / relative_path
+                full_path = Path(dirpath) / relative_path
                 break
 
     if not full_path.exists():

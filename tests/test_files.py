@@ -1,4 +1,5 @@
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from tests.fixtures.generate_mock_ileapp import generate_mock_ileapp_case
 
 
 @pytest.fixture
-def case(tmp_path: Path):
+def case(tmp_path: Path) -> Iterator[CaseManager]:
     generate_mock_ileapp_case(tmp_path)
     app = tmp_path / "data/private/var/mobile/Containers/Shared/AppGroup/X/file"
     (app / "a").mkdir(parents=True)
@@ -42,13 +43,14 @@ def test_exact_name_only_and_ambiguity_is_an_error(case: CaseManager) -> None:
     info = get_file_attachment(case, "DATA.PY", path=rel)
     assert info.text == "print('exfil')\n" and info.content_kind == "text"
     assert info.source_file == rel and info.source_ios_path == rel.removeprefix("data/")
-    assert info.evidence_id.startswith("EV-") and info.row_digest == info.sha256[:16]
+    assert info.evidence_id is not None and info.evidence_id.startswith("EV-")
+    assert info.row_digest == info.sha256[:16]
 
 
 def test_documents_and_binaries(case: CaseManager) -> None:
     assert get_file_attachment(case, "plan.docx").text == "Plan & budget"
     pdf = get_file_attachment(case, "blank.pdf")
-    assert pdf.content_kind == "pdf" and pdf.text == "" and "OCR" in pdf.note
+    assert pdf.content_kind == "pdf" and pdf.text == "" and pdf.note and "OCR" in pdf.note
     blob = get_file_attachment(case, "blob.bin")
     assert blob.content_kind == "binary" and blob.text is None and blob.note
 
@@ -63,10 +65,13 @@ def test_plist_decoding_stays_inside_the_case(case: CaseManager) -> None:
         decode_plist(case, "../../../etc/passwd")
 
 
-def test_oversized_text_and_docx_bomb_are_not_unpacked(case: CaseManager, monkeypatch) -> None:
+def test_oversized_text_and_docx_bomb_are_not_unpacked(
+    case: CaseManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from ileapp_mcp.modules import files
 
     monkeypatch.setattr(files, "MAX_TEXT_BYTES", 1000)
+    assert case.case_path is not None
     app = case.case_path / "data/private/var/mobile/Containers/Shared/AppGroup/X/file/a"
     (app / "big.txt").write_text("x" * 2000, encoding="utf-8")
     with zipfile.ZipFile(app / "bomb.docx", "w", zipfile.ZIP_DEFLATED) as z:
@@ -74,4 +79,4 @@ def test_oversized_text_and_docx_bomb_are_not_unpacked(case: CaseManager, monkey
     big = get_file_attachment(case, "big.txt")
     assert big.text is None and big.size_bytes == 2000 and len(big.sha256) == 64
     bomb = get_file_attachment(case, "bomb.docx")
-    assert bomb.text is None and "too large" in bomb.note
+    assert bomb.text is None and bomb.note and "too large" in bomb.note
