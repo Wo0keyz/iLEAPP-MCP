@@ -51,6 +51,7 @@ dev = [
     "ruff>=0.5.0",
     "mypy>=1.10.0",
     "build>=1.2.0",
+    "pypdf>=5",  # for test_files.py and mypy; optional at runtime (documents extra)
 ]
 documents = [
     "pypdf>=5",
