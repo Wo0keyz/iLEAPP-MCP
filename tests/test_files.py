@@ -16,7 +16,7 @@ def case(tmp_path: Path) -> Iterator[CaseManager]:
     app = tmp_path / "data/private/var/mobile/Containers/Shared/AppGroup/X/file"
     (app / "a").mkdir(parents=True)
     (app / "b").mkdir(parents=True)
-    (app / "a/data.py").write_text("print('exfil')\n", encoding="utf-8")
+    (app / "a/data.py").write_bytes(b"print('exfil')\n")  # write_text gives \r\n on Windows
     (app / "b/data.py").write_text("print('other')\n", encoding="utf-8")
     (app / "a/database.py").write_text("x = 1\n", encoding="utf-8")
     with zipfile.ZipFile(app / "a/plan.docx", "w") as z:
