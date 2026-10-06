@@ -6,7 +6,6 @@ import logging
 import os
 import re
 import sqlite3
-import sys
 import tempfile
 import threading
 from collections.abc import Generator
@@ -21,7 +20,8 @@ _RESUME_LAST_CASE = os.environ.get("ILEAPP_MCP_RESUME_LAST_CASE") == "1"
 _STATE_FILE = os.path.join(tempfile.gettempdir(), ".ileapp_mcp_last_case")
 _MAX_FILES_TO_SCAN = 2_000_000  # guard against pointing the server at a filesystem root
 
-csv.field_size_limit(sys.maxsize)  # a long message body must not abort the read of its file
+# a long message body must not abort the read of its file; the limit is a C long (32-bit on Windows)
+csv.field_size_limit(2**31 - 1)
 
 _PLAIN_SELECT = re.compile(r"^SELECT \* FROM `([^`]+)`( LIMIT \d+)?$", re.IGNORECASE)
 # iLEAPP columns that name the iOS file a row was parsed from
