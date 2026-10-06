@@ -1,12 +1,10 @@
 from typing import Any
 
-from pydantic import BaseModel
-
-from ileapp_mcp.case import CaseManager
-from ileapp_mcp.models import PaginatedResult
+from ileapp_mcp.case import CaseManager, evidence_fields
+from ileapp_mcp.models import PaginatedResult, Sourced
 
 
-class SearchHit(BaseModel):
+class SearchHit(Sourced):
     artifact_name: str
     matched_text: str
     row_data: dict[str, Any]
@@ -27,45 +25,32 @@ def global_keyword_search(
 
     kw_lower = keyword.lower()
     total_count = 0
-    filtered: list[SearchHit] = []
+    page: list[SearchHit] = []
 
-    # Fast path: search through all TSV files (which are iLEAPP's unified text exports)
+    # Rows are read through the csv parser (not split by hand) so that quoted fields and line
+    # breaks inside a field keep their record number, which is the provenance of the hit.
     for tsv_path in case.get_all_tsv_files():
-        artifact_name = tsv_path.stem
-        try:
-            for row in case.read_tsv_records(tsv_path):
-                # Check if keyword in any string value
-                match_found = False
-                matched_text = ""
-                for _k, v in row.items():
-                    if v and isinstance(v, str) and kw_lower in v.lower():
-                        match_found = True
-                        # Snippet extraction
-                        idx = v.lower().find(kw_lower)
-                        start = max(0, idx - 40)
-                        end = min(len(v), idx + len(keyword) + 40)
-                        matched_text = (
-                            ("..." if start > 0 else "")
-                            + v[start:end]
-                            + ("..." if end < len(v) else "")
-                        )
-                        break
-
-                if match_found:
-                    total_count += 1
-                    filtered.append(
-                        SearchHit(
-                            artifact_name=artifact_name,
-                            matched_text=matched_text.strip(),
-                            row_data=row,
-                        )
+        for row in case.iter_tsv_rows(tsv_path):
+            value = next((v for v in row.values() if v and kw_lower in v.lower()), None)
+            if value is None:
+                continue
+            total_count += 1
+            if offset < total_count <= offset + limit:
+                idx = value.lower().find(kw_lower)
+                start = max(0, idx - 40)
+                end = min(len(value), idx + len(keyword) + 40)
+                matched = ("..." if start > 0 else "") + value[start:end]
+                matched += "..." if end < len(value) else ""
+                page.append(
+                    SearchHit(
+                        artifact_name=tsv_path.stem,
+                        matched_text=matched.strip(),
+                        row_data=dict(row),
+                        **evidence_fields(row),
                     )
-        except Exception:
-            pass
+                )
 
-    page = filtered[offset : offset + limit]
     has_more = (offset + limit) < total_count
-
     return PaginatedResult[SearchHit](
         items=page,
         total_count=total_count,

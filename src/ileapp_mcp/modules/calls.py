@@ -3,7 +3,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import CallRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,7 @@ def _normalize_call_record(raw: dict[str, Any], default_app: str = "Cellular") -
         phone_number=number_str,
         contact_name=name_str,
         duration_seconds=duration,
+        **evidence_fields(raw),
     )
 
 
@@ -149,7 +150,7 @@ def get_call_history(
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
                         process_row(row_dict, default_app)
             except Exception as e:
-                logger.debug("Error reading calls from SQLite %s: %s", db_path, e)
+                logger.warning("Error reading calls from SQLite %s: %s", db_path, e)
 
     # 2. Search TSV files
     for tsv_path in case.get_all_tsv_files():

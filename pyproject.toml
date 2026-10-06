@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ileapp-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Model Context Protocol (MCP) server for iLEAPP forensic report outputs from iOS Full File System (FFS) extractions"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -51,6 +51,10 @@ dev = [
     "ruff>=0.5.0",
     "mypy>=1.10.0",
     "build>=1.2.0",
+    "pypdf>=5",  # for test_files.py and mypy; optional at runtime (documents extra)
+]
+documents = [
+    "pypdf>=5",
 ]
 
 [project.scripts]

@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import AppRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,7 @@ def _normalize_app_record(raw: dict[str, Any]) -> AppRecord:
         developer=str(developer).strip() if developer else None,
         app_path=str(path).strip() if path else None,
         permissions=permissions,
+        **evidence_fields(raw),
     )
 
 
@@ -184,7 +185,7 @@ def get_installed_apps(
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
                         process_row(row_dict)
             except Exception as e:
-                logger.debug("Error reading apps from SQLite %s: %s", db_path, e)
+                logger.warning("Error reading apps from SQLite %s: %s", db_path, e)
 
     # 2. Search TSV files
     for tsv_path in case.get_all_tsv_files():
@@ -194,7 +195,7 @@ def get_installed_apps(
                 for row_dict in case.iter_tsv_rows(tsv_path):
                     process_row(row_dict)
             except Exception as e:
-                logger.debug("Error reading apps from TSV %s: %s", tsv_path, e)
+                logger.warning("Error reading apps from TSV %s: %s", tsv_path, e)
 
     all_apps = list(merged_map.values())
     all_apps.sort(key=lambda x: (x.app_name or x.bundle_id or "").lower())

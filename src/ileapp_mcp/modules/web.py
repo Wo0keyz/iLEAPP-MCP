@@ -4,7 +4,7 @@ import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import PaginatedResult, WebRecord
 
 logger = logging.getLogger(__name__)
@@ -90,6 +90,7 @@ def _normalize_web_record(
         title=title,
         visit_count=visit_count,
         search_term=search_term,
+        **evidence_fields(raw),
     )
 
 
@@ -215,7 +216,7 @@ def get_web_activity(
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
                         process_row(row_dict, default_browser=browser, default_type=t_type)
             except Exception as e:
-                logger.debug("Error reading web SQLite %s: %s", db_path, e)
+                logger.warning("Error reading web SQLite %s: %s", db_path, e)
 
     # 2. Search TSV files
     for tsv_path in case.get_all_tsv_files():
@@ -245,7 +246,7 @@ def get_web_activity(
                 for row_dict in case.iter_tsv_rows(tsv_path):
                     process_row(row_dict, default_browser=browser, default_type=rec_type)
             except Exception as e:
-                logger.debug("Error reading web TSV %s: %s", tsv_path, e)
+                logger.warning("Error reading web TSV %s: %s", tsv_path, e)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 

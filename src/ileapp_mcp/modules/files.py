@@ -1,80 +1,142 @@
 import hashlib
+import html
 import os
 import plistlib
+import re
+import zipfile
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import Field
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_id
+from ileapp_mcp.models import Sourced
 
 
-class FileInfo(BaseModel):
+class FileInfo(Sourced):
+    """A file of the extraction, its fingerprint and, when it has one, its text."""
+
     file_name: str
-    absolute_path: str
     size_bytes: int
     sha256: str
-    content_preview: str | None = None
-    is_binary: bool
+    content_kind: str = Field(description="text, pdf, docx or binary")
+    text: str | None = Field(
+        default=None, description="Extracted text, from `offset`, at most `max_chars`"
+    )
+    text_chars_total: int = Field(default=0, description="Length of the whole extracted text")
+    note: str | None = Field(default=None, description="Why no text was extracted, if none was")
 
 
-def get_file_attachment(case: CaseManager, file_name: str) -> FileInfo | None:
-    """Search for a specific file/attachment within the extracted iLEAPP directory by its name."""
+# Text is extracted in memory: above this size (file, or unpacked DOCX body) only the fingerprint is given.
+MAX_TEXT_BYTES = 20 * 1024 * 1024
+
+
+def _docx_text(path: Path) -> str | None:
+    with zipfile.ZipFile(path) as z:
+        if z.getinfo("word/document.xml").file_size > MAX_TEXT_BYTES:  # zip bomb
+            return None
+        with z.open("word/document.xml") as body:
+            xml = body.read(MAX_TEXT_BYTES + 1).decode("utf-8")
+    xml = re.sub(r"</w:p>", "\n", xml)
+    return html.unescape(re.sub(r"<[^>]+>", "", xml)).strip()
+
+
+def _pdf_text(path: Path) -> str | None:
+    try:
+        from pypdf import PdfReader
+    except ImportError:  # optional extra: pip install ileapp-mcp[documents]
+        return None
+    return "\n".join(page.extract_text() or "" for page in PdfReader(path).pages).strip()
+
+
+def _extract_text(path: Path) -> tuple[str, str | None, str | None]:
+    """(kind, text or None, note)."""
+    suffix = path.suffix.lower()
+    if path.stat().st_size > MAX_TEXT_BYTES:
+        return "binary", None, f"file larger than {MAX_TEXT_BYTES} bytes: text not extracted"
+    if suffix == ".pdf":
+        text = _pdf_text(path)
+        if text is None:
+            return "pdf", None, "PDF text not extracted: pypdf is not installed"
+        return (
+            "pdf",
+            text,
+            None if text else "PDF without a text layer (scanned image?): OCR needed",
+        )
+    if suffix == ".docx":
+        text = _docx_text(path)
+        return (
+            "docx",
+            text,
+            None if text is not None else "DOCX body too large once unpacked: text not extracted",
+        )
+    data = path.read_bytes()
+    if b"\x00" in data[:8192]:
+        return "binary", None, "binary file: no text"
+    try:
+        return "text", data.decode("utf-8"), None
+    except UnicodeDecodeError:
+        return "binary", None, "not valid UTF-8: no text"
+
+
+def get_file_attachment(
+    case: CaseManager,
+    file_name: str,
+    path: str | None = None,
+    max_chars: int = 20000,
+    offset: int = 0,
+) -> FileInfo:
+    """A file of the extraction whose name is exactly `file_name` (case-insensitive).
+
+    Several files with that name: an error lists them, and `path` (relative to the case) picks one.
+    Nothing outside the case directory is ever read.
+    """
     if not case.is_loaded or not case.case_path:
         raise ValueError("No case loaded. Please call load_case first.")
-
-    # We will search recursively in the case root directory
-    target = file_name.lower()
-
-    # We use os.walk to find the file
-    for root, _dirs, files in os.walk(str(case.case_path)):
-        for f in files:
-            if target in f.lower():
-                full_path = Path(root) / f
-                try:
-                    size = full_path.stat().st_size
-                    # Hash
-                    sha256_hash = hashlib.sha256()
-                    is_binary = False
-                    preview = ""
-
-                    with open(full_path, "rb") as bf:
-                        chunk = bf.read(4096)
-                        if b"\\x00" in chunk and b"bplist" not in chunk[:6]:
-                            is_binary = True
-
-                        # compute hash completely
-                        bf.seek(0)
-                        for c in iter(lambda: bf.read(65536), b""):
-                            sha256_hash.update(c)
-
-                    if not is_binary and size < 1000000:  # 1MB limit for text preview
-                        try:
-                            with open(full_path, encoding="utf-8") as tf:
-                                preview = tf.read()[:2000]
-                        except UnicodeDecodeError:
-                            is_binary = True
-
-                    if full_path.suffix == ".plist" or full_path.suffix == ".bplist":
-                        try:
-                            with open(full_path, "rb") as bf:
-                                pl = plistlib.load(bf)
-                                preview = str(pl)[:2000]
-                                is_binary = False
-                        except Exception:
-                            pass
-
-                    return FileInfo(
-                        file_name=f,
-                        absolute_path=str(full_path),
-                        size_bytes=size,
-                        sha256=sha256_hash.hexdigest(),
-                        content_preview=preview if not is_binary else None,
-                        is_binary=is_binary,
-                    )
-                except Exception:
-                    pass
-    return None
+    root = case.case_path.resolve()
+    target = file_name.strip().lower()
+    matches = sorted(
+        Path(d) / f for d, _dirs, files in os.walk(root) for f in files if f.lower() == target
+    )
+    if path is not None:
+        matches = [m for m in matches if m.relative_to(root).as_posix() == path.strip().lstrip("/")]
+    if not matches:
+        raise FileNotFoundError(
+            f"no file named exactly {file_name!r} in the case" + (f" at {path!r}" if path else "")
+        )
+    if len(matches) > 1:
+        listed = "; ".join(m.relative_to(root).as_posix() for m in matches[:20])
+        raise ValueError(
+            f"{len(matches)} files are named {file_name!r}: pass `path` to choose one ({listed})"
+        )
+    full = matches[0]
+    if not full.resolve().is_relative_to(root):  # symlink leading out of the case
+        raise PermissionError(f"{full} points outside the case directory")
+    rel = full.relative_to(root).as_posix()
+    digest = hashlib.sha256()
+    with full.open("rb") as fh:  # hashlib.file_digest n'existe qu'à partir de Python 3.11
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    sha = digest.hexdigest()
+    kind, text, note = _extract_text(full)
+    max_chars = max(1, min(max_chars, 100000))
+    offset = max(0, offset)
+    in_copy = re.search(r"(?:^|/)data/(private/.*)$", rel)
+    return FileInfo(
+        evidence_id=evidence_id(rel, None, "file"),
+        source_file=rel,
+        source_table=None,
+        row_id="file",
+        source_ios_path=in_copy.group(1) if in_copy else None,
+        row_digest=sha[:16],
+        file_name=full.name,
+        size_bytes=full.stat().st_size,
+        sha256=sha,
+        content_kind=kind,
+        text=text[offset : offset + max_chars] if text is not None else None,
+        text_chars_total=len(text or ""),
+        note=note,
+    )
 
 
 def _json_safe(obj: Any) -> Any:
@@ -92,13 +154,16 @@ def decode_plist(case: CaseManager, relative_path: str) -> dict[str, Any] | str:
     if not case.is_loaded or not case.case_path:
         raise ValueError("No case loaded. Please call load_case first.")
 
-    # Resolve path
-    full_path = case.case_path / relative_path
+    # Resolve path, never outside the case directory
+    root = case.case_path.resolve()
+    full_path = (root / relative_path).resolve()
+    if not full_path.is_relative_to(root):
+        raise PermissionError(f"{relative_path} is outside the case directory")
     if not full_path.exists() or not full_path.is_file():
         # Try finding it globally
-        for root, _dirs, files in os.walk(str(case.case_path)):
+        for dirpath, _dirs, files in os.walk(str(case.case_path)):
             if relative_path in files:
-                full_path = Path(root) / relative_path
+                full_path = Path(dirpath) / relative_path
                 break
 
     if not full_path.exists():

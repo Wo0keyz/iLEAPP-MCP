@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import MessageRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -22,15 +22,17 @@ def _find_field(
         if raw_norm in norm_targets:
             return raw_v
 
-    # Pass 2: Substring match with exclusion of conflicting suffixes
+    # Pass 2: Substring match with exclusion of conflicting patterns
     for raw_k, raw_v in raw.items():
         if raw_v is None or raw_v == "":
             continue
-        raw_norm = re.sub(r"[\s_-]+", "", str(raw_k).lower())
-        if any(raw_norm.endswith(ex) for ex in exclude_suffixes):
+        raw_norm = re.sub(r"[\s_()-]+", "", str(raw_k).lower())
+        if any(ex in raw_norm for ex in exclude_suffixes):
             continue
         for nt in norm_targets:
-            if len(nt) >= 4 and (nt in raw_norm or raw_norm in nt):
+            # The column name must contain the alias, never the reverse: a "Message" column is
+            # not a "Message Date".
+            if len(nt) >= 4 and nt in raw_norm:
                 return raw_v
     return None
 
@@ -38,7 +40,15 @@ def _find_field(
 def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage") -> MessageRecord:
     """Normalize fields across different iLEAPP message plugins and DB schemas."""
     ts = _find_field(
-        ["Message Date", "Date", "Timestamp", "Delivered Date", "Read Date", "Time"],
+        [
+            "Message Date",
+            "Creation Timestamp",
+            "Date",
+            "Timestamp",
+            "Delivered Date",
+            "Read Date",
+            "Time",
+        ],
         raw,
         exclude_suffixes=("id", "text", "body", "sender", "recipient"),
     )
@@ -58,19 +68,44 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
             "sender",
             "recipient",
             "service",
+            "count",
+            "origin",
+            "location",
+            "method",
         ),
     )
     text_str = str(text).strip() if text else None
 
     sender = _find_field(
-        ["Sender ID", "Sender Number", "Chat Sender", "Sender", "From", "Author"],
+        [
+            "Sender Username",
+            "Sender Display Name",
+            "Sender ID",
+            "Sender Number",
+            "Chat Sender",
+            "Sender",
+            "From",
+            "Author",
+        ],
         raw,
-        exclude_suffixes=("date", "time", "text", "body", "recipient"),
+        # "From Me" is a direction flag (0/1), not a sender
+        exclude_suffixes=("date", "time", "text", "body", "recipient", "fromme"),
     )
     sender_str = str(sender).strip() if sender else None
 
     recipient = _find_field(
-        ["Recipient ID", "Recipient Number", "Group ID", "Destination", "Recipient", "To"],
+        [
+            "Conversation Participants",
+            "Recipient ID",
+            "Recipient Number",
+            "Conversation With",
+            "Chat Name",
+            "Chat Contact ID",
+            "Group ID",
+            "Destination",
+            "Recipient",
+            "To",
+        ],
         raw,
         exclude_suffixes=("date", "time", "text", "body", "sender"),
     )
@@ -91,17 +126,35 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
         else:
             direction = v_str
 
+    if direction == "Outgoing":
+        recipient_str = recipient_str or sender_str
+        sender_str = "Owner"
+    elif direction == "Incoming":
+        if not sender_str:
+            sender_str = recipient_str
+        recipient_str = "Owner"
+
     app_raw = _find_field(
-        ["Service", "App", "Source", "Application", "Protocol"],
+        ["Service", "App", "Protocol", "Application"],
         raw,
-        exclude_suffixes=("date", "time", "text", "body"),
+        exclude_suffixes=("date", "time", "text", "body", "database", "db", "source"),
     )
-    app = str(app_raw).strip() if app_raw else default_app
+    app = (
+        str(app_raw).strip()
+        if (
+            app_raw
+            and not str(app_raw).endswith((".sqlite", ".db"))
+            and "\\" not in str(app_raw)
+            and "/" not in str(app_raw)
+        )
+        else default_app
+    )
 
     attachment_raw = _find_field(
-        ["Attachment", "Attachments", "Filename", "File Path", "Media"],
+        ["Attachment File", "Attachment", "Attachments", "Filename", "File Path", "Media"],
         raw,
-        exclude_suffixes=("date", "time", "text", "body"),
+        # "Attachment Count" / "Attachment Size" describe an attachment, they are not one
+        exclude_suffixes=("date", "time", "text", "body", "count", "size", "mimetype", "name"),
     )
     attachments: list[str] = []
     if attachment_raw:
@@ -118,6 +171,7 @@ def _normalize_message_record(raw: dict[str, Any], default_app: str = "iMessage"
         direction=direction,
         attachment_count=len(attachments),
         attachment_paths=attachments,
+        **evidence_fields(raw),
     )
 
 
@@ -153,18 +207,22 @@ def get_messages(
         "snapchat",
     ]
 
-    seen = set()
+    exported: set[tuple[str, str, str]] = set()  # messages already served by a TSV export
     filtered: list[MessageRecord] = []
     total_count = 0
+    skipped_empty = 0
 
-    def process_row(r_dict: dict[str, Any], db_app: str) -> None:
-        nonlocal total_count
+    def process_row(r_dict: dict[str, Any], db_app: str, from_export: bool) -> None:
+        nonlocal total_count, skipped_empty
 
         # Quick pre-filter if it's clearly not matching app
         if app.lower() != "all" and app.lower() not in db_app.lower():
             return
 
         msg = _normalize_message_record(r_dict, default_app=db_app)
+        if not msg.message_text and not msg.attachment_paths:
+            skipped_empty += 1  # reported to the caller: a row without content is not a message
+            return
 
         if sender and (not msg.sender or sender.lower() not in msg.sender.lower()):
             return
@@ -182,12 +240,15 @@ def get_messages(
         if end_date and msg.timestamp and msg.timestamp > end_date:
             return
 
-        key = (msg.timestamp or "", msg.sender or "", msg.message_text or "", msg.app)
-        if key not in seen:
-            seen.add(key)
-            total_count += 1
-            # Keep in memory only up to offset + limit to prevent OOM
-            filtered.append(msg)
+        # Every row of an iLEAPP export is kept: two identical texts sent in the same second are
+        # two messages. Only database rows that repeat an already exported message are dropped.
+        key = (msg.timestamp or "", msg.sender or "", msg.message_text or "")
+        if from_export:
+            exported.add(key)
+        elif key in exported:
+            return
+        total_count += 1
+        filtered.append(msg)
 
     # 1. Search TSV/CSV files (Priority because they are properly joined by iLEAPP plugins)
     for tsv_path in case.get_all_tsv_files():
@@ -197,6 +258,9 @@ def get_messages(
             ("conversation" in stem and "snapchat" not in stem)
             or "contact" in stem
             or "group" in stem
+            or "biome" in stem
+            or "retention" in stem  # "iOS Message Retention" is a setting, not a conversation
+            or "email" in stem  # mail has its own artifacts ("Apple Email - Message Headers")
         ):
             continue
         if any(t in stem for t in target_dbs):
@@ -218,9 +282,11 @@ def get_messages(
 
             tsv_rows = case.read_tsv_records(tsv_path)
             for row in tsv_rows:
-                process_row(row, default_app)
+                process_row(row, default_app, from_export=True)
 
-    # 2. Search SQLite databases (Fallback for unsupported apps, exclude complex CoreData databases)
+    # 2. Report-level SQLite databases (report formats that ship messages as SQLite).
+    #    The raw iOS databases copied under data/ are never scanned here: iLEAPP already joined
+    #    them into the exports above, and their bare tables would only add unjoined rows.
     sqlite_dbs = [
         "sms",
         "message",
@@ -232,37 +298,34 @@ def get_messages(
         "snapchat",
         "picaboo",
     ]
-    for db_path in case.get_all_sqlite_dbs():
+    for db_path in case.get_report_sqlite_dbs():
         stem = db_path.stem.lower()
-        if any(t in stem for t in sqlite_dbs):
-            try:
-                conn = case.get_sqlite_connection(db_path)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                )
-                tables = [r[0] for r in cursor.fetchall()]
-                for table in tables:
-                    db_app = "iMessage"
-                    if "whatsapp" in stem or "whatsapp" in table.lower():
-                        db_app = "WhatsApp"
-                    elif "telegram" in stem or "telegram" in table.lower():
-                        db_app = "Telegram"
-                    elif "viber" in stem or "viber" in table.lower():
-                        db_app = "Viber"
-                    elif "snapchat" in stem or "picaboo" in stem:
-                        db_app = "Snapchat"
-                    elif "sms" in stem or "imessage" in stem or "chat" in stem:
-                        db_app = "SMS/iMessage"
-                    elif "zangi" in stem:
-                        db_app = "Zangi"
-                    elif "sms" in stem:
-                        db_app = "SMS/iMessage"
+        if not any(t in stem for t in sqlite_dbs):
+            continue
+        try:
+            conn = case.get_sqlite_connection(db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+            tables = [r[0] for r in cursor.fetchall()]
+            for table in tables:
+                db_app = "iMessage"
+                if "whatsapp" in stem or "whatsapp" in table.lower():
+                    db_app = "WhatsApp"
+                elif "telegram" in stem or "telegram" in table.lower():
+                    db_app = "Telegram"
+                elif "viber" in stem or "viber" in table.lower():
+                    db_app = "Viber"
+                elif "snapchat" in stem or "picaboo" in stem:
+                    db_app = "Snapchat"
+                elif "sms" in stem or "imessage" in stem or "chat" in stem:
+                    db_app = "SMS/iMessage"
 
-                    for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
-                        process_row(row_dict, db_app)
-            except Exception as e:
-                logger.debug("Error querying SQLite messages from %s: %s", db_path, e)
+                for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{table}`"):
+                    process_row(row_dict, db_app, from_export=False)
+        except Exception as e:
+            logger.warning("Error querying SQLite messages from %s: %s", db_path, e)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 
@@ -280,4 +343,5 @@ def get_messages(
         limit=limit,
         offset=offset,
         next_offset=next_offset,
+        skipped_empty=skipped_empty,
     )

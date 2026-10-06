@@ -59,3 +59,11 @@ def test_run_readonly_sql_with_limit(loaded_case: CaseManager) -> None:
     assert result.row_count == 1
     assert "message_text" in result.columns
     assert not result.truncated
+
+
+def test_exact_lookup_never_substitutes_another_artifact(loaded_case: CaseManager) -> None:
+    # "Apple" is a substring of "Apple_Maps"/"Apple_Notes": the fuzzy lookup returns one of them
+    assert get_raw_artifact_data(loaded_case, "Apple").total_count >= 1
+    with pytest.raises(ValueError, match="not found"):
+        get_raw_artifact_data(loaded_case, "Apple", exact=True)
+    assert get_raw_artifact_data(loaded_case, "Apple_Maps", exact=True).total_count >= 1

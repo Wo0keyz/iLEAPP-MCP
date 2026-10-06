@@ -67,16 +67,14 @@ graph TD
 ### 3.1. `CaseManager` (`src/ileapp_mcp/case.py`)
 Le **cœur d'accès aux données**. Il gère :
 * **Découverte & Indexation** : Détecte les sous-dossiers `_iLEAPP_Reports_*` et indexe l'ensemble des fichiers `.sqlite`, `.db`, `.tsv` et `.csv` dans un dictionnaire mémoire (`stem -> Path`).
-* **Protection DoS** : Limite l'exploration à 50 000 fichiers pour éviter le blocage lors d'un scan de dossier racine.
-* **Pool de Connexions SQLite Thread-Safe** : Caches de connexions par base, configurées avec `check_same_thread=False` et `row_factory = sqlite3.Row`.
-* **Protection DoS** : Limite l'exploration à 50 000 fichiers pour éviter le blocage lors d'un scan de dossier racine.
+* **Garde-fou d'indexation** : l'exploration s'arrête à 2 000 000 d'entrées (erreur de pointage sur une racine de disque). Une indexation tronquée n'est jamais silencieuse : `get_case_info` renvoie `index_truncated: true`.
 * **Pool de Connexions SQLite Thread-Safe** : Caches de connexions par base, configurées avec `check_same_thread=False` et `row_factory = sqlite3.Row`.
 * **Générateurs à Empreinte Mémoire Nulle (Lazy-Yielding)** : Fournit `iter_sqlite_rows` et `iter_tsv_rows` qui streamment les lignes au lieu de charger les 100 000 entrées d'une table avec `fetchall()`.
 * **Streaming & Tri Chronologique Global** : Dans chaque module, les enregistrements sont évalués, filtrés et dédupliqués à la volée. L'ensemble des résultats correspondants est trié en mémoire (`list.sort()`) pour garantir un ordre chronologique déterministe lors de la pagination, consommant de façon optimale la RAM (~20Mo pour 100 000 records).
 * **Sérialisation Sûre RFC 8259** : Les données binaires (BLOBs SQLite) sont automatiquement tronquées et converties en chaînes hexadécimales lisibles. Les coordonnées géographiques et valeurs numériques sont validées contre `NaN` et `Infinity` pour ne jamais corrompre le parseur JSON du client MCP.
-* **Résilience aux Clients Stateless** : Le chemin de l'extraction active est sauvegardé dans `.ileapp_mcp_last_case` (répertoire temporaire système), permettant aux clients MCP qui redémarrent le processus en mode stdio (comme Charm Crush) de conserver l'état du cas en toute transparence.
+* **Résilience aux Clients Stateless** (optionnelle, `ILEAPP_MCP_RESUME_LAST_CASE=1` ; désactivée par défaut pour qu'un client ne change pas silencieusement le cas lu par un autre) : le chemin de l'extraction active est sauvegardé dans `.ileapp_mcp_last_case` (répertoire temporaire système), permettant aux clients MCP qui redémarrent le processus en mode stdio (comme Charm Crush) de conserver l'état du cas en toute transparence.
 * **Estimateur de Pagination SQL** : `query_sqlite` intercepte les requêtes pour calculer le `COUNT(*)` sans double-pagination et injecte `LIMIT/OFFSET` de façon transparente.
-* **Parsing Multi-Encodage** : Lecture résiliente des TSV/CSV avec `errors="replace"` en essayant successivement `utf-8-sig`, `utf-8`, `latin-1` et `cp1252`.
+* **Lecture stricte des exports** : les TSV/CSV sont lus par le module `csv` en mode strict (`utf-8-sig`, `newline=""`, sans limite de taille de champ). Un fichier illisible, disparu ou mal formé fait échouer l'appel d'outil (`Unreadable export file(s)`) au lieu de passer pour un export vide. Les fichiers CSV/TSV de l'appareil lui-même (sous `data/`) ne sont pas des exports et ne sont pas indexés.
 
 ### 3.2. Normalisation Dynamique & Priorité Ordinale : `_find_field`
 Chaque module forensique utilise une fonction de matching de colonne insensible à la casse et aux séparateurs, respectant l'ordre de priorité strict des alias définis par le développeur :
@@ -105,6 +103,24 @@ L'outil `run_readonly_sql` applique une stratégie de **défense en profondeur**
    * Liste noire de mots-clés de mutation (`DROP`, `DELETE`, `UPDATE`, `INSERT`, `ALTER`, `ATTACH`, `VACUUM`, etc.).
 2. **Contrôle Moteur SQLite** : Connexion forcée en `file:<path>?mode=ro`. Même en cas de contournement du Regex, SQLite lève une erreur système d'écriture.
 3. **Assainissement des Noms d'Artefacts** : Suppression des backticks et quotes lors des requêtes sur tables dynamiques.
+
+---
+
+### 3.7. Provenance des enregistrements (`Sourced`)
+Chaque enregistrement renvoyé par un outil dit d'où il vient. Ces champs sont remplis par le serveur à la lecture de la ligne (`CaseManager.iter_tsv_rows` / `iter_sqlite_rows`), jamais par l'appelant :
+
+| Champ | Contenu |
+| :--- | :--- |
+| `source_file` | fichier d'export lu, relatif au dossier du cas (ex. `_TSV Exports/Signal - Messages.tsv`) |
+| `source_table` | table SQLite, le cas échéant |
+| `row_id` | numéro d'enregistrement dans le TSV (lecture `csv`, donc stable même avec des retours à la ligne dans un champ), ou `rowid` SQLite |
+| `evidence_id` | identifiant stable `EV-…` dérivé des trois champs précédents |
+| `source_ios_path` | fichier iOS d'origine : colonne `Source File` de la ligne si iLEAPP l'a écrite, sinon `source_path` de l'artefact dans `_lava_data.lava`. `null` si iLEAPP ne l'a pas consigné : jamais de chemin inventé |
+
+* Les lignes brutes de `get_raw_artifact_data` portent la même chose sous la clé `_prov` ; `get_raw_artifact_data(exact=True)` refuse toute substitution d'artefact par nom voisin.
+* `get_device_info` et `get_cloud_identities` sont des agrégats : leur champ `sources` indique, pour chaque valeur, la ligne retenue.
+* `get_timeline` reste sans provenance ligne à ligne (événements dérivés de `tl.db`).
+* Test de référence : `tests/test_provenance.py` relit chaque ligne citée sans passer par le code du serveur.
 
 ---
 

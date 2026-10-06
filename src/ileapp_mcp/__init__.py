@@ -6,5 +6,5 @@ Enables LLMs to explore and analyze iOS Full File System (FFS) forensic reports 
 from ileapp_mcp.case import CaseManager
 from ileapp_mcp.server import mcp
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["CaseManager", "mcp", "__version__"]

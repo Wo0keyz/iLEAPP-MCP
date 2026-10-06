@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from ileapp_mcp.case import CaseManager
+from ileapp_mcp.case import CaseManager, evidence_fields
 from ileapp_mcp.models import HealthRecord, PaginatedResult
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,7 @@ def get_health_data(
                     value=val_str,
                     unit=unit_str,
                     source_device=source_str,
+                    **evidence_fields(row),
                 )
             )
 
@@ -159,7 +160,7 @@ def get_health_data(
                     for row_dict in case.iter_sqlite_rows(db_path, f"SELECT * FROM `{tbl}`"):
                         process_row(row_dict, db_path.stem)
             except Exception as e:
-                logger.debug("Error reading health SQLite %s: %s", db_path, e)
+                logger.warning("Error reading health SQLite %s: %s", db_path, e)
 
     # 2. Search TSV files
     for tsv_path in case.get_all_tsv_files():
@@ -169,7 +170,7 @@ def get_health_data(
                 for row_dict in case.iter_tsv_rows(tsv_path):
                     process_row(row_dict, tsv_path.stem)
             except Exception as e:
-                logger.debug("Error reading health TSV %s: %s", tsv_path, e)
+                logger.warning("Error reading health TSV %s: %s", tsv_path, e)
 
     filtered.sort(key=lambda x: x.timestamp or "")
 

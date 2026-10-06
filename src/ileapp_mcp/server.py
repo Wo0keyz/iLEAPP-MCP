@@ -1,6 +1,8 @@
+import functools
 import logging
 import os
-from typing import Any
+from collections.abc import Callable
+from typing import Any, ParamSpec, TypeVar
 
 try:
     from mcp.server.mcpserver import MCPServer as FastMCP
@@ -66,6 +68,30 @@ mcp = FastMCP("iLEAPP Forensic Server")
 # Global case manager instance
 case_manager = CaseManager()
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def _fail_on_read_errors(tool: Callable[P, R]) -> Callable[P, R]:
+    """Turn a swallowed file read failure into a tool error.
+
+    Domain modules skip a file they cannot read and carry on, which would make a corrupt export
+    look like an empty one. CaseManager records every such failure; any of them fails the call.
+    """
+
+    @functools.wraps(tool)
+    def checked(*args: P.args, **kwargs: P.kwargs) -> R:
+        case_manager.read_errors.clear()
+        result = tool(*args, **kwargs)
+        if case_manager.read_errors:
+            errors = "; ".join(dict.fromkeys(case_manager.read_errors))
+            case_manager.read_errors.clear()
+            raise ValueError(f"Unreadable export file(s): {errors}")
+        return result
+
+    return checked
+
+
 # Auto-load case if environment variable is set
 default_case_env = os.environ.get("ILEAPP_REPORT_DIR")
 if default_case_env:
@@ -77,6 +103,7 @@ if default_case_env:
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def load_case(path: str) -> CaseInfo:
     """Load or switch dynamically to an iLEAPP extraction output directory.
 
@@ -88,6 +115,7 @@ def load_case(path: str) -> CaseInfo:
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_case_info() -> CaseInfo:
     """Get the current case status, index overview, and summary of discovered artifacts."""
     if not case_manager.is_loaded or not case_manager.case_path:
@@ -115,17 +143,20 @@ def get_case_info() -> CaseInfo:
         case_path=str(case_manager.case_path),
         loaded=True,
         total_artifacts=len(all_dbs) + len(all_tsvs),
+        index_truncated=case_manager.index_truncated,
         device_summary=summary,
     )
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_device_info() -> DeviceInfo:
     """Extract hardware serial, model, iOS firmware, timezone, and acquisition metadata."""
     return _get_device_info(case_manager)
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_messages(
     sender: str | None = None,
     recipient: str | None = None,
@@ -162,6 +193,7 @@ def get_messages(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_call_history(
     phone_number: str | None = None,
     call_type: str | None = None,
@@ -192,6 +224,7 @@ def get_call_history(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_location_history(
     latitude: float | None = None,
     longitude: float | None = None,
@@ -228,6 +261,7 @@ def get_location_history(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_web_activity(
     domain: str | None = None,
     search_query: str | None = None,
@@ -261,6 +295,7 @@ def get_web_activity(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_installed_apps(
     app_name: str | None = None,
     bundle_id: str | None = None,
@@ -288,6 +323,7 @@ def get_installed_apps(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_timeline(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -315,17 +351,20 @@ def get_timeline(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def list_available_artifacts() -> list[ArtifactInfo]:
     """List all available forensic artifacts (SQLite tables and TSV files) in the loaded iLEAPP report."""
     return _list_available_artifacts(case_manager)
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_raw_artifact_data(
     artifact_name: str,
     filters: dict[str, str] | None = None,
     limit: int = 50,
     offset: int = 0,
+    exact: bool = False,
 ) -> PaginatedResult[dict[str, Any]]:
     """Query raw tabular data from any specific artifact (e.g. 'Apple_Notes', 'SMS_&_iMessage.db:messages').
 
@@ -334,6 +373,8 @@ def get_raw_artifact_data(
         filters: Key-value filters to match against record fields.
         limit: Page size limit (max 250, default 50).
         offset: Pagination offset.
+        exact: Only accept a TSV export named exactly artifact_name (no substring fallback, which
+            can silently return a different artifact).
     """
     return _get_raw_artifact_data(
         case_manager,
@@ -341,10 +382,12 @@ def get_raw_artifact_data(
         filters=filters,
         limit=limit,
         offset=offset,
+        exact=exact,
     )
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def run_readonly_sql(
     query: str,
     db_name: str | None = None,
@@ -366,6 +409,7 @@ def run_readonly_sql(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_health_data(
     metric_type: str | None = None,
     start_date: str | None = None,
@@ -385,6 +429,7 @@ def get_health_data(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_notes_and_memos(
     keyword: str | None = None,
     note_type: str | None = None,
@@ -406,6 +451,7 @@ def get_notes_and_memos(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_photos_metadata(
     has_gps: bool = False,
     is_deleted: bool = False,
@@ -429,6 +475,7 @@ def get_photos_metadata(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_network_connections(
     connection_type: str | None = None,
     ssid_or_name: str | None = None,
@@ -450,6 +497,7 @@ def get_network_connections(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_system_state(
     event_type: str | None = None,
     start_date: str | None = None,
@@ -469,6 +517,7 @@ def get_system_state(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def global_keyword_search(
     keyword: str,
     limit: int = 50,
@@ -484,18 +533,26 @@ def global_keyword_search(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_file_attachment(
     file_name: str,
-) -> FileInfo | None:
-    """Search for a specific file/attachment within the extracted iLEAPP directory by its name (e.g. 'Astronautica_Sanitized.pdf' or 'data.py').
-    Returns file absolute path, SHA256 hash, size, and a preview of the content if it is text."""
+    path: str | None = None,
+    max_chars: int = 20000,
+    offset: int = 0,
+) -> FileInfo:
+    """Read a file of the extraction (e.g. a message attachment) whose name is exactly file_name.
+
+    Returns its provenance (evidence_id, path in the case and on the device), SHA-256, size and its
+    text (plain text, PDF, DOCX), from `offset`, at most `max_chars` characters. If several files
+    share the name, the error lists their paths: call again with `path` to choose one.
+    """
     return _get_file_attachment(
-        case=case_manager,
-        file_name=file_name,
+        case=case_manager, file_name=file_name, path=path, max_chars=max_chars, offset=offset
     )
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def decode_plist_or_protobuf(
     relative_path: str,
 ) -> dict[str, Any] | str:
@@ -507,6 +564,7 @@ def decode_plist_or_protobuf(
 
 
 @mcp.tool()
+@_fail_on_read_errors
 def get_cloud_identities() -> CloudIdentityProfile:
     """Aggregate identity and network profiles across the device. Returns Apple IDs, MDM accounts, Phone numbers, Wi-Fi SSIDs, and Bluetooth devices."""
     return _get_cloud_identities(
